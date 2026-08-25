@@ -1,0 +1,146 @@
+<!doctype html><html><head><meta charset='utf-8'><title>Tedlar Lead Agent</title><style>
+@page { size: Letter; margin: 15mm 16mm; }
+* { box-sizing: border-box; }
+html { color-scheme: light; background: #ffffff; }
+body { background: #ffffff; font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; color: #14202a;
+       font-size: 9.6pt; line-height: 1.45; margin: 0; }
+h1 { font-size: 19pt; margin: 0 0 2pt; color: #0b3c49; letter-spacing: -0.2pt; }
+h1 + p { color: #5c7480; font-size: 9pt; margin: 0 0 10pt; }
+h2 { font-size: 11.5pt; color: #0b3c49; margin: 13pt 0 4pt;
+     border-top: 1px solid #d8e2e6; padding-top: 7pt; }
+h2:first-of-type { border-top: none; padding-top: 0; }
+h3 { font-size: 10pt; margin: 9pt 0 3pt; color: #1c7293; }
+p { margin: 0 0 5pt; }
+ul, ol { margin: 0 0 6pt; padding-left: 15pt; }
+li { margin-bottom: 2pt; }
+strong { color: #0b3c49; }
+em { color: #14202a; }
+code { font-family: "SF Mono", Menlo, monospace; font-size: 8.6pt;
+       background: #eef3f5; padding: 0.5pt 2.5pt; border-radius: 2px; }
+pre { background: #eef3f5; padding: 6pt 8pt; border-radius: 3px; overflow-x: auto;
+      font-size: 8.2pt; line-height: 1.35; margin: 0 0 7pt; }
+pre code { background: none; padding: 0; }
+hr { border: none; border-top: 1px solid #d8e2e6; margin: 11pt 0; }
+table { border-collapse: collapse; width: 100%; margin: 0 0 7pt; font-size: 8.8pt; }
+th { text-align: left; background: #0b3c49; color: #fff; padding: 3.5pt 5pt; font-weight: 600; }
+td { padding: 3.5pt 5pt; border-bottom: 1px solid #e3e9ec; vertical-align: top; }
+</style></head><body><h1>Tedlar Lead Agent — Design &amp; Results</h1>
+<p><strong>DuPont Tedlar, Graphics &amp; Signage</strong> · lead discovery → qualification → outreach</p>
+<hr />
+<h2>1. Agent workflow</h2>
+<p>The brief invites a swarm of chatty agents. I built the opposite: a <strong>deterministic
+pipeline of seven stages</strong>, with the LLM confined to the two jobs it is genuinely
+better at than code — reading a messy web page, and writing prose over facts that
+are already established.</p>
+<p><code>discover_events → extract_companies → dedupe → enrich_companies
+      → qualify → find_contacts → draft_outreach → dashboard</code></p>
+<p>Everything else is plain Python: scoring, deduplication, retry and backoff,
+persistence, filtering, provider selection. That choice is the whole architecture,
+and it buys three things a multi-agent design does not.</p>
+<p><strong>Reproducibility.</strong> The same inputs give the same score, every run. A sales
+manager can argue with the number because the number is a formula, not a mood.</p>
+<p><strong>Debuggability.</strong> When a lead looks wrong, the breakdown says which of five
+components produced the points and which URL backed each one. There is no
+"the agent decided" step to shrug at.</p>
+<p><strong>Cost.</strong> The LLM is called twice per qualified lead — once to read the site,
+once to write — instead of once per reasoning hop.</p>
+<p>Orchestration is a sequential runner over a shared <code>RunContext</code>. The load-bearing
+primitive is <code>ctx.attempt(...)</code>: per-record work runs inside it, an <em>expected</em>
+failure (HTTP error, invalid model output, missing field) becomes a persisted
+<code>StageError</code> plus <code>status="incomplete"</code> on that record, and the run continues. A
+genuine programming error still propagates. <strong>Partial success is the designed
+outcome; a crash is a bug.</strong></p>
+<p>The LLM boundary is enforced, not just intended. Model output is parsed into a
+Pydantic model before it can touch the database; invalid output triggers exactly
+one repair round-trip carrying the validator's own error message, then the record
+degrades rather than the run failing. Both LLM stages have a deterministic
+fallback, so the entire pipeline runs end-to-end with no API key at all.</p>
+<hr />
+<h2>2. Data processing</h2>
+<p><strong>Events.</strong> Six anchor institutions — ISA Sign Expo, PRINTING United Expo, FESPA
+Global Print Expo, the International Sign Association, PRINTING United Alliance,
+OAAA — are seeded as URLs and then <em>verified live</em>: fetched, title confirmed,
+source recorded. Anything unreachable is kept and marked unverified, never
+silently dropped. Search expansion then adds events we did not seed, gated by a
+title heuristic and one-event-per-host so the channel cannot flood the table with
+"Register" pages.</p>
+<p><strong>Companies</strong> arrive through three channels, because each fails differently:</p>
+<ol>
+<li><em>Exhibitor directory scrape.</em> Works on plain-HTML directories. The flagship
+   shows front their lists with a JavaScript app over an API that rejects
+   server-side clients — those record a miss in the error log.</li>
+<li><em>ICP-shaped search.</em> The channel that scales: retargeting is new query
+   templates, not new code.</li>
+<li><em>A verified ICP roster</em> — names and public URLs only. Every fact still comes
+   from fetching the site. This is the one hand-curated input and is deliberately
+   the cheapest thing in the repo to delete.</li>
+</ol>
+<p><strong>Deduplication</strong> is deterministic: registrable domain first (<code>www.</code>, subdomains
+and multi-part public suffixes normalised), then normalised legal name with a
+0.90 fuzzy threshold, so "Avery Dennison", "Avery Dennison Corp." and
+<code>graphics.averydennison.com</code> collapse into one record while Arlon and Avery do
+not. Field-wise merge keeps what we already know and fills the holes.</p>
+<p><strong>Enrichment</strong> follows the company's own navigation — ranking links by nav
+keywords rather than guessing <code>/about</code> — and turns the text into structured facts.
+The extraction prompt is null-preferring and forbidden from inferring: "a global
+leader" is explicitly <em>not</em> a size statement. A regex backstop reads revenue only
+when a revenue word sits within 60 characters of the figure, which is what stops
+"a $2 billion market" being recorded as company turnover.</p>
+<p><strong>Provenance</strong> is structural. Every HTTP response is written to a
+content-addressed cache with URL, status and timestamp — failures included, so a
+cached replay reproduces the original run's error log rather than reporting cache
+misses. Every claim in the UI carries a clickable source URL, and that URL is the
+one the fact actually came from: a revenue figure read off an aggregator cites the
+aggregator, not the company's homepage, and is labelled a third-party estimate.</p>
+<hr />
+<h2>3. Qualification, contacts, outreach</h2>
+<p>The score is 0–100 across five weighted components — industry fit (30),
+application fit (25), size (15), event engagement (15), pain-point alignment (15)
+— with the ICP vocabulary, bands and thresholds all living as data in one file.
+Each component that scores emits an <code>Evidence</code> row carrying the URL it came from.</p>
+<p><code>confidence</code> is separate from score and measures how much of the score is
+URL-backed, penalised for a missing website, missing size data, or an unenriched
+record. This separation matters: a high-score/low-confidence lead is a research
+task, not a call.</p>
+<p>The LLM writes the rationale from the finished breakdown, and two guards run
+afterwards — a cited URL outside the supplied evidence set flags the record, and
+any sentence making a numeric claim we cannot match to a known figure is removed.</p>
+<p><strong>Contacts</strong> sit behind a <code>ContactProvider</code> protocol with <code>find_contacts</code> and
+<code>is_configured</code>. <code>PublicWebContactProvider</code> works today. <code>ClayProvider</code> and
+<code>SalesNavigatorProvider</code> are written in full — the real Clay table-webhook
+poll/callback flow and the real SNAP <code>salesApiLeadSearch</code> request shape — and gated
+on credentials. Scraping Sales Navigator would breach LinkedIn's terms, so without
+a partner token that provider contributes one honest artefact: a pre-filtered
+Sales Navigator deep link a licensed rep can click. Enabling Clay in production is
+<code>CONTACT_PROVIDERS=clay,public_web</code> plus two secrets, with no caller changes.</p>
+<p><strong>Outreach</strong> is drafted only for tier A/B leads that have a contact <em>and</em> evidence.
+The model must return the hook fact and the URL it came from; a validator rejects
+the draft if that URL is not one we supplied, if the body or subject runs long, or
+if it contains banned filler. Rejected drafts fall back to a deterministic
+template built from the same evidence, labelled as such in the UI.</p>
+<hr />
+<h2>4. Implementation results</h2>
+<p>Pipeline runs end to end in both modes, and a cached replay reproduces a live run exactly — same 54 companies, same 47 enrichments, same 13 handled errors — in 2.4 seconds against roughly fifteen minutes live. <strong>87 tests, no network</strong>, covering scoring
+bands and tier boundaries, deduplication, LLM-output repair and failure,
+cache/retry behaviour, provider fallback, outreach validation, and the resilience
+guarantee — a stage that raises does not lose prior work, and later stages still run.</p>
+<p>The dashboard shows summary metrics, live stage progress, filters by event / tier /
+score / text, a lead table, and a detail panel with the score breakdown, rationale,
+clickable evidence, contact card with Sales Navigator link, and a copy/edit/approve
+outreach editor. A dedicated error tab lists every handled failure, because a
+pipeline that hides its failures is worse than one that has none.</p>
+<p><strong>What the constraints cost, stated plainly.</strong> MapYourShow-backed exhibitor
+directories are JavaScript-gated and their API refuses server-side clients — a
+headless browser is the fix. Without a paid search key, recall on category leaders
+is thin, which is why the roster channel exists. Most private companies never
+publish revenue, so the size component is frequently zero; the scorer treats that
+as a confidence penalty rather than inventing a band. Each of these is visible in
+the error log rather than papered over — which is the behaviour I would want from
+this system in production, and the reason it was built this way.</p>
+<hr />
+<h2>5. Scaling path</h2>
+<p>Bounded async throughout — a global concurrency semaphore plus a per-host lock and
+delay. Per-record isolation already exists in every stage, so moving to a task
+queue means enqueuing the same coroutines with no stage changes. The ICP is one
+file. <code>DATABASE_URL</code> is the only thing between SQLite and Postgres. Search and
+contact providers are protocols with registries, so a new vendor is a new file.</p></body></html>
