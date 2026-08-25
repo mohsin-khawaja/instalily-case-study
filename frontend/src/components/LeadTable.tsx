@@ -1,107 +1,161 @@
 "use client";
 
 import type { Lead } from "@/lib/types";
-import { Chip, ConfidenceDots, Empty, ScoreBar, Skeleton, TierBadge } from "./primitives";
+import { CautionChip, ConfidenceMeter, Empty, ScoreCell, Skeleton, TierBadge } from "./Atoms";
+
+const COLUMNS = [
+  "Company",
+  "Industry",
+  "Size",
+  "Events",
+  "Score",
+  "Tier",
+  "Confidence",
+  "Contact",
+];
 
 export function LeadTable({
   leads,
   loading,
   onSelect,
   selectedId,
+  filtersActive,
 }: {
   leads: Lead[];
   loading: boolean;
   onSelect: (lead: Lead) => void;
   selectedId?: string;
+  filtersActive: boolean;
 }) {
-  if (loading) return <Skeleton rows={8} />;
+  if (loading) return <Skeleton rows={10} />;
   if (!leads.length) {
     return (
       <Empty
-        title="No leads match these filters"
-        hint="Widen the score range or clear the event filter. If the table is empty everywhere, run the pipeline from the header."
+        title={filtersActive ? "No leads match these filters" : "No leads yet"}
+        hint={
+          filtersActive
+            ? "Widen the score range, clear the event filter, or include lower tiers."
+            : "Run lead discovery from the header. A cached run replays the committed snapshot in seconds."
+        }
       />
     );
   }
 
   return (
-    <div className="scroll-x">
-      <table className="w-full min-w-[1000px] text-sm">
+    <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+      <table style={{ width: "100%", minWidth: 1040, borderCollapse: "collapse" }}>
         <thead>
-          <tr
-            className="border-b text-left text-[11px] uppercase tracking-wide"
-            style={{ borderColor: "var(--border)", color: "var(--text-muted)" }}
-          >
-            <th className="px-3 py-2 font-medium">Company</th>
-            <th className="px-3 py-2 font-medium">Industry</th>
-            <th className="px-3 py-2 font-medium">Size</th>
-            <th className="px-3 py-2 font-medium">Events</th>
-            <th className="px-3 py-2 font-medium">Score</th>
-            <th className="px-3 py-2 font-medium">Tier</th>
-            <th className="px-3 py-2 font-medium">Confidence</th>
-            <th className="px-3 py-2 font-medium">Contact</th>
+          <tr>
+            {COLUMNS.map((c) => (
+              <th
+                key={c}
+                style={{
+                  position: "sticky",
+                  top: 0,
+                  zIndex: 1,
+                  textAlign: "left",
+                  padding: "7px 16px",
+                  fontSize: 10,
+                  fontWeight: 600,
+                  letterSpacing: 0.6,
+                  textTransform: "uppercase",
+                  color: "var(--c-t3)",
+                  background: "var(--c-page)",
+                  borderBottom: "1px solid var(--c-hairline)",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {c}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
           {leads.map((lead) => {
             const contact = lead.contacts[0];
             const selected = lead.company_id === selectedId;
+            const size = lead.revenue_band ?? lead.employee_band;
             return (
               <tr
                 key={lead.company_id}
                 onClick={() => onSelect(lead)}
-                className="cursor-pointer border-b transition-colors"
+                className={selected ? "" : "row-hover"}
                 style={{
-                  borderColor: "var(--border)",
-                  background: selected ? "var(--surface-2)" : "transparent",
+                  cursor: "pointer",
+                  background: selected ? "var(--c-raised)" : "transparent",
+                  borderBottom: "1px solid var(--c-hairline)",
                 }}
               >
-                <td className="px-3 py-2.5">
-                  <div className="font-medium">{lead.company_name}</div>
-                  <div className="text-xs" style={{ color: "var(--text-muted)" }}>
+                <Cell>
+                  <div style={{ fontSize: 12.5, fontWeight: 600 }}>{lead.company_name}</div>
+                  <div
+                    style={{
+                      fontSize: 10.5,
+                      color: "var(--c-t3)",
+                      fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                    }}
+                  >
                     {lead.domain ?? "no domain"}
                   </div>
-                </td>
-                <td className="px-3 py-2.5" style={{ color: "var(--text-secondary)" }}>
-                  {lead.industry ?? "—"}
-                </td>
-                <td className="px-3 py-2.5" style={{ color: "var(--text-secondary)" }}>
-                  {lead.revenue_band ?? lead.employee_band ?? (
-                    <Chip tone="warning" title="No public size figure was found">
+                </Cell>
+
+                <Cell style={{ color: "var(--c-t2)", fontSize: 12 }}>{lead.industry ?? "—"}</Cell>
+
+                <Cell>
+                  {size ? (
+                    <span className="tabular" style={{ fontSize: 12, color: "var(--c-t2)" }}>
+                      {size}
+                    </span>
+                  ) : (
+                    <CautionChip title="No public size figure was found; this costs confidence rather than being guessed">
                       unknown
-                    </Chip>
+                    </CautionChip>
                   )}
-                </td>
-                <td className="px-3 py-2.5">
+                </Cell>
+
+                <Cell>
                   {lead.events.length ? (
-                    <span title={lead.events.map((e) => e.name).join(", ")}>
+                    <span
+                      className="tabular"
+                      style={{ fontSize: 12, color: "var(--c-t2)" }}
+                      title={lead.events.map((e) => e.name).join(", ")}
+                    >
                       {lead.events.length}
                     </span>
                   ) : (
-                    <span style={{ color: "var(--text-muted)" }}>—</span>
+                    <span style={{ color: "var(--c-t3)" }}>—</span>
                   )}
-                </td>
-                <td className="px-3 py-2.5">
-                  <ScoreBar value={lead.score_total} />
-                </td>
-                <td className="px-3 py-2.5">
-                  <TierBadge tier={lead.tier} showLabel={false} />
-                </td>
-                <td className="px-3 py-2.5">
-                  <ConfidenceDots value={lead.confidence} />
-                </td>
-                <td className="px-3 py-2.5">
+                </Cell>
+
+                <Cell>
+                  <ScoreCell value={lead.score_total} />
+                </Cell>
+
+                <Cell>
+                  <TierBadge tier={lead.tier} />
+                </Cell>
+
+                <Cell>
+                  <ConfidenceMeter value={lead.confidence} />
+                </Cell>
+
+                <Cell>
                   {contact ? (
-                    <div>
-                      <div className="font-medium">{contact.full_name}</div>
-                      <div className="text-xs" style={{ color: "var(--text-muted)" }}>
-                        {contact.title ?? "—"}
+                    <>
+                      <div style={{ fontSize: 12, fontWeight: 500 }}>{contact.full_name}</div>
+                      <div
+                        style={{ fontSize: 10.5, color: "var(--c-t3)" }}
+                        title={contact.title ?? undefined}
+                      >
+                        {truncate(contact.title, 34)}
                       </div>
-                    </div>
+                    </>
                   ) : (
-                    <span style={{ color: "var(--text-muted)" }}>—</span>
+                    <span style={{ fontSize: 11.5, color: "var(--c-t3)", fontStyle: "italic" }}>
+                      no contact found
+                    </span>
                   )}
-                </td>
+                </Cell>
               </tr>
             );
           })}
@@ -109,4 +163,19 @@ export function LeadTable({
       </table>
     </div>
   );
+}
+
+function Cell({
+  children,
+  style,
+}: {
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+}) {
+  return <td style={{ padding: "9px 16px", verticalAlign: "middle", ...style }}>{children}</td>;
+}
+
+function truncate(text: string | null | undefined, max: number) {
+  if (!text) return "—";
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }

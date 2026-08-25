@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, ApiError } from "@/lib/api";
+import { ApiError, api } from "@/lib/api";
 import type {
   EventOut,
   Lead,
@@ -11,24 +11,27 @@ import type {
   Summary,
   Tier,
 } from "@/lib/types";
-import { ErrorLog } from "@/components/ErrorLog";
-import { EventList } from "@/components/EventList";
-import { LeadDetail } from "@/components/LeadDetail";
+import { Button, WarnIcon } from "@/components/Atoms";
+import { ErrorsTab } from "@/components/ErrorsTab";
+import { EventsTab } from "@/components/EventsTab";
+import { LeadDrawer } from "@/components/LeadDrawer";
 import { LeadTable } from "@/components/LeadTable";
-import { MetricsBar } from "@/components/MetricsBar";
+import { MetricTiles, RunEconomicsBar } from "@/components/MetricTiles";
 import { PipelineStrip } from "@/components/PipelineStrip";
-import { Button, Card } from "@/components/primitives";
-
-const TIER_FILTERS: { value: Tier; label: string }[] = [
-  { value: "A", label: "A — Priority" },
-  { value: "B", label: "B — Qualified" },
-  { value: "C", label: "C — Watch" },
-  { value: "disqualified", label: "Out of ICP" },
-];
 
 type Tab = "leads" | "events" | "errors";
 
+const TIER_FILTERS: { value: Tier; label: string; color: string }[] = [
+  { value: "A", label: "A · Priority", color: "var(--c-good)" },
+  { value: "B", label: "B · Qualified", color: "var(--c-score-1)" },
+  { value: "C", label: "C · Watch", color: "var(--c-warning)" },
+  { value: "disqualified", label: "Out of ICP", color: "var(--c-t3)" },
+];
+
 export default function Dashboard() {
+  const [dark, setDark] = useState(
+    () => typeof document !== "undefined" && document.documentElement.classList.contains("dark"),
+  );
   const [summary, setSummary] = useState<Summary | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [events, setEvents] = useState<EventOut[]>([]);
@@ -49,7 +52,18 @@ export default function Dashboard() {
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const load = useCallback(async () => {
+  /* The bootstrap script in layout.tsx has already resolved the theme onto
+     <html> before paint, so we read it rather than deciding it again here. */
+  function toggleTheme() {
+    setDark((d) => {
+      const next = !d;
+      window.localStorage.setItem("tedlar-theme", next ? "dark" : "light");
+      document.documentElement.classList.toggle("dark", next);
+      return next;
+    });
+  }
+
+  const load = useCallback(async (isStale: () => boolean = () => false) => {
     try {
       const [s, l, e, err, runs] = await Promise.all([
         api.summary(),
@@ -63,6 +77,8 @@ export default function Dashboard() {
         api.errors(),
         api.runs(),
       ]);
+      // A slower earlier request must not overwrite a newer one's results.
+      if (isStale()) return;
       setSummary(s);
       setLeads(l);
       setEvents(e);
@@ -70,17 +86,26 @@ export default function Dashboard() {
       setRun(runs[0] ?? null);
       setApiError(null);
     } catch (e) {
+      if (isStale()) return;
       setApiError(e instanceof ApiError ? e.message : "Unexpected error loading data");
     } finally {
-      setLoading(false);
+      if (!isStale()) setLoading(false);
     }
   }, [tiers, eventId, minScore, query]);
 
   useEffect(() => {
-    void load();
+    let cancelled = false;
+    // The rule guards against cascading renders from a synchronous setState.
+    // Every write in `load` happens after an await, in a later task, and the
+    // cancelled flag stops a stale response from landing at all.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load(() => cancelled);
+    return () => {
+      cancelled = true;
+    };
   }, [load]);
 
-  // Poll only while a run is active, then refresh everything once it settles.
+  /* Poll only while a run is active, then refresh once it settles. */
   useEffect(() => {
     if (run?.status !== "running") {
       if (pollRef.current) {
@@ -96,9 +121,9 @@ export default function Dashboard() {
         setRun(latest);
         if (latest.status !== "running") void load();
       } catch {
-        /* transient poll failure: the next tick retries */
+        /* a dropped poll retries on the next tick */
       }
-    }, 2500);
+    }, 2000);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
@@ -109,11 +134,13 @@ export default function Dashboard() {
     [leads, selectedId],
   );
 
+  const running = run?.status === "running";
+  const filtersActive = Boolean(tiers.length || eventId || minScore || query);
+
   async function startRun() {
     setStarting(true);
     try {
-      const started = await api.startRun(mode);
-      setRun(started);
+      setRun(await api.startRun(mode));
       setApiError(null);
     } catch (e) {
       setApiError(e instanceof ApiError ? e.message : "Could not start the run");
@@ -131,166 +158,377 @@ export default function Dashboard() {
     );
   }
 
-  const running = run?.status === "running";
-
   return (
-    <div className="min-h-screen">
-      <header
-        className="sticky top-0 z-30 border-b px-4 py-3 backdrop-blur"
-        style={{ borderColor: "var(--border)", background: "color-mix(in srgb, var(--page) 88%, transparent)" }}
-      >
-        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-3">
-          <div className="mr-auto">
-            <h1 className="text-base font-semibold">Tedlar Lead Agent</h1>
-            <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
-              DuPont Tedlar — Graphics &amp; Signage · lead discovery, qualification and outreach
-            </p>
-          </div>
+    <div
+      className={dark ? "dark" : ""}
+      style={{
+        height: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        background: "var(--c-page)",
+        color: "var(--c-t1)",
+        overflow: "hidden",
+      }}
+    >
+      {apiError && (
+        <div
+          className="flex items-center gap-2"
+          style={{
+            background: "var(--c-critical)",
+            color: "#fff",
+            padding: "7px 24px",
+            fontSize: 12,
+            fontWeight: 500,
+            flexShrink: 0,
+          }}
+        >
+          <WarnIcon size={12} />
+          {apiError}
+          <button
+            onClick={() => void load()}
+            style={{
+              marginLeft: "auto",
+              background: "transparent",
+              border: "1px solid rgba(255,255,255,.5)",
+              borderRadius: 4,
+              color: "#fff",
+              cursor: "pointer",
+              fontSize: 11,
+              padding: "2px 8px",
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
+      {/* ── Header ─────────────────────────────────────────────────────── */}
+      <header
+        className="flex items-center gap-4"
+        style={{
+          background: "var(--c-surface)",
+          borderBottom: "1px solid var(--c-hairline)",
+          padding: "0 24px",
+          height: 52,
+          flexShrink: 0,
+        }}
+      >
+        <div className="flex items-center gap-2.5">
+          <div
+            className="flex items-center justify-center"
+            style={{
+              width: 26,
+              height: 26,
+              borderRadius: 6,
+              background: "var(--c-invert-bg)",
+              flexShrink: 0,
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <circle cx="7" cy="7" r="5.4" stroke="var(--c-invert-fg)" strokeWidth="1.4" />
+              <path
+                d="M4 7h6M7 4v6"
+                stroke="var(--c-invert-fg)"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
+            </svg>
+          </div>
+          <div>
+            <div style={{ fontSize: 13.5, fontWeight: 700, lineHeight: 1.2 }}>
+              Tedlar Lead Agent
+            </div>
+            <div style={{ fontSize: 10, color: "var(--c-t3)", lineHeight: 1.2 }}>
+              DuPont Tedlar — Graphics &amp; Signage
+            </div>
+          </div>
+        </div>
+
+        <div style={{ flex: 1 }} />
+
+        <label
+          className="flex items-center gap-1.5"
+          style={{ fontSize: 11.5, color: "var(--c-t2)" }}
+        >
+          Mode
           <select
             value={mode}
             onChange={(e) => setMode(e.target.value)}
-            className="rounded-md border px-2 py-1.5 text-sm"
-            style={{ borderColor: "var(--border-strong)", background: "transparent" }}
-            title="Cached replays the committed HTTP snapshot; live re-fetches every source."
+            title="Cached replays the committed snapshot; live re-fetches every source."
+            style={{
+              padding: "4px 8px",
+              fontSize: 11.5,
+              borderRadius: 5,
+              background: "var(--c-raised)",
+              border: "1px solid var(--c-hairline)",
+              color: "var(--c-t1)",
+              cursor: "pointer",
+              outline: "none",
+            }}
           >
             <option value="cached">Cached run</option>
             <option value="live">Live run</option>
           </select>
-          <Button variant="primary" onClick={startRun} disabled={starting || running}>
-            {running ? "Pipeline running…" : starting ? "Starting…" : "Run lead discovery"}
-          </Button>
-        </div>
+        </label>
 
-        <div className="mx-auto mt-3 flex max-w-[1600px] flex-wrap items-center gap-3">
-          <PipelineStrip run={run} />
-          {summary && (
-            <p className="ml-auto text-[11px]" style={{ color: "var(--text-muted)" }}>
-              LLM {summary.llm_enabled ? "enabled" : "disabled (deterministic fallbacks)"} · search{" "}
-              {summary.search_provider} · contacts {summary.contact_providers.join(" → ")}
-            </p>
+        <Button variant="primary" onClick={startRun} disabled={starting || running}>
+          {running ? (
+            <>
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 12 12"
+                fill="none"
+                style={{ animation: "spin 1s linear infinite" }}
+              >
+                <circle
+                  cx="6"
+                  cy="6"
+                  r="4.5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeDasharray="18 8"
+                />
+              </svg>
+              Running…
+            </>
+          ) : starting ? (
+            "Starting…"
+          ) : (
+            "Run lead discovery"
           )}
-        </div>
+        </Button>
+
+        <button
+          onClick={toggleTheme}
+          title={dark ? "Switch to light mode" : "Switch to dark mode"}
+          className="flex items-center justify-center"
+          style={{
+            width: 30,
+            height: 30,
+            borderRadius: 6,
+            border: "1px solid var(--c-hairline)",
+            background: "var(--c-raised)",
+            color: "var(--c-t2)",
+            cursor: "pointer",
+          }}
+        >
+          {dark ? (
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="8" r="3.4" stroke="currentColor" strokeWidth="1.4" />
+              <path
+                d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M11.54 4.46l1.41-1.41M3.05 12.95l1.41-1.41"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+              />
+            </svg>
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path
+                d="M13 8.5A5.5 5.5 0 0 1 7.5 3C5 3 3 5 3 7.5A5.5 5.5 0 0 0 8.5 13C11 13 13 11 13 8.5Z"
+                stroke="currentColor"
+                strokeWidth="1.4"
+              />
+            </svg>
+          )}
+        </button>
       </header>
 
-      <main className="mx-auto max-w-[1600px] space-y-4 px-4 py-4">
-        {apiError && (
-          <Card className="px-4 py-3">
-            <p className="text-sm" style={{ color: "var(--status-critical)" }}>
-              {apiError}
-            </p>
-          </Card>
-        )}
+      <PipelineStrip run={run} summary={summary} />
+      <MetricTiles summary={summary} />
+      <RunEconomicsBar summary={summary} />
 
-        <MetricsBar summary={summary} />
-
-        <Card>
-          <div
-            className="flex flex-wrap items-center gap-2 border-b px-3 py-2"
-            style={{ borderColor: "var(--border)" }}
+      {/* ── Tabs ───────────────────────────────────────────────────────── */}
+      <div
+        className="flex items-end"
+        style={{
+          background: "var(--c-surface)",
+          borderBottom: "1px solid var(--c-hairline)",
+          padding: "0 16px",
+          flexShrink: 0,
+        }}
+      >
+        {(
+          [
+            { id: "leads", label: "Leads", count: leads.length, warn: false },
+            { id: "events", label: "Events", count: events.length, warn: false },
+            { id: "errors", label: "Errors", count: errors.length, warn: true },
+          ] as const
+        ).map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className="flex items-center gap-1.5"
+            style={{
+              padding: "9px 14px 8px",
+              fontSize: 12,
+              fontWeight: tab === t.id ? 600 : 400,
+              color: tab === t.id ? "var(--c-t1)" : "var(--c-t3)",
+              background: "transparent",
+              border: "none",
+              borderBottom: `2px solid ${tab === t.id ? "var(--c-t1)" : "transparent"}`,
+              marginBottom: -1,
+              cursor: "pointer",
+            }}
           >
-            {(["leads", "events", "errors"] as Tab[]).map((t) => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className="rounded px-2.5 py-1 text-sm capitalize"
+            {t.label}
+            <span
+              className="tabular"
+              style={{
+                padding: "1px 6px",
+                borderRadius: 10,
+                fontSize: 10,
+                fontWeight: 600,
+                color: t.warn && t.count ? "var(--c-caution)" : "var(--c-t3)",
+                background:
+                  t.warn && t.count
+                    ? "color-mix(in srgb, var(--c-caution) 12%, transparent)"
+                    : "var(--c-raised)",
+                border: `1px solid ${
+                  t.warn && t.count
+                    ? "color-mix(in srgb, var(--c-caution) 25%, transparent)"
+                    : "var(--c-hairline)"
+                }`,
+              }}
+            >
+              {t.count}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {/* ── Content ────────────────────────────────────────────────────── */}
+      <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+        {tab === "leads" && (
+          <>
+            <div
+              className="flex flex-wrap items-center gap-2"
+              style={{
+                padding: "8px 16px",
+                borderBottom: "1px solid var(--c-hairline)",
+                background: "var(--c-surface)",
+                flexShrink: 0,
+              }}
+            >
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search company, domain, industry, product…"
                 style={{
-                  background: tab === t ? "var(--surface-2)" : "transparent",
-                  color: tab === t ? "var(--text-primary)" : "var(--text-secondary)",
+                  flex: "1 1 220px",
+                  minWidth: 200,
+                  padding: "5px 10px",
+                  fontSize: 12,
+                  borderRadius: 5,
+                  border: "1px solid var(--c-hairline)",
+                  background: "var(--c-raised)",
+                  color: "var(--c-t1)",
+                  outline: "none",
+                }}
+              />
+              <select
+                value={eventId}
+                onChange={(e) => setEventId(e.target.value)}
+                style={{
+                  padding: "5px 8px",
+                  fontSize: 11.5,
+                  borderRadius: 5,
+                  border: "1px solid var(--c-hairline)",
+                  background: "var(--c-raised)",
+                  color: "var(--c-t1)",
+                  cursor: "pointer",
+                  outline: "none",
+                  maxWidth: 230,
                 }}
               >
-                {t}
-                {t === "errors" && errors.length > 0 && (
-                  <span className="tnum ml-1.5 text-xs" style={{ color: "var(--status-serious)" }}>
-                    {errors.length}
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
+                <option value="">All events</option>
+                {events.map((event) => (
+                  <option key={event.id} value={event.id}>
+                    {event.name}
+                  </option>
+                ))}
+              </select>
 
-          {tab === "leads" && (
-            <>
-              <div
-                className="flex flex-wrap items-center gap-2 border-b px-3 py-2"
-                style={{ borderColor: "var(--border)" }}
+              <label
+                className="flex items-center gap-2"
+                style={{ fontSize: 11.5, color: "var(--c-t2)" }}
               >
+                Min score
                 <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search company, industry, product…"
-                  className="min-w-56 flex-1 rounded-md border px-2.5 py-1.5 text-sm"
-                  style={{ borderColor: "var(--border-strong)", background: "transparent" }}
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={minScore}
+                  onChange={(e) => setMinScore(Number(e.target.value))}
+                  style={{ width: 84 }}
                 />
-                <select
-                  value={eventId}
-                  onChange={(e) => setEventId(e.target.value)}
-                  className="rounded-md border px-2 py-1.5 text-sm"
-                  style={{ borderColor: "var(--border-strong)", background: "transparent" }}
-                >
-                  <option value="">All events</option>
-                  {events.map((event) => (
-                    <option key={event.id} value={event.id}>
-                      {event.name}
-                    </option>
-                  ))}
-                </select>
-                <label
-                  className="flex items-center gap-2 text-xs"
-                  style={{ color: "var(--text-secondary)" }}
-                >
-                  min score
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    step={5}
-                    value={minScore}
-                    onChange={(e) => setMinScore(Number(e.target.value))}
-                  />
-                  <span className="tnum w-6">{minScore}</span>
-                </label>
-                <div className="flex flex-wrap gap-1">
-                  {TIER_FILTERS.map((filter) => {
-                    const active = tiers.includes(filter.value);
-                    return (
-                      <button
-                        key={filter.value}
-                        onClick={() =>
-                          setTiers((current) =>
-                            active
-                              ? current.filter((t) => t !== filter.value)
-                              : [...current, filter.value],
-                          )
-                        }
-                        className="rounded border px-2 py-1 text-xs"
-                        style={{
-                          borderColor: active ? "var(--series-1)" : "var(--border)",
-                          color: active ? "var(--series-1)" : "var(--text-secondary)",
-                        }}
-                      >
-                        {filter.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <LeadTable
-                leads={leads}
-                loading={loading}
-                selectedId={selectedId}
-                onSelect={(lead) => setSelectedId(lead.company_id)}
-              />
-            </>
-          )}
+                <span className="tabular" style={{ width: 22, color: "var(--c-t1)" }}>
+                  {minScore || "off"}
+                </span>
+              </label>
 
-          {tab === "events" && <EventList events={events} loading={loading} />}
-          {tab === "errors" && <ErrorLog errors={errors} loading={loading} />}
-        </Card>
-      </main>
+              <div className="flex flex-wrap gap-1">
+                {TIER_FILTERS.map((filter) => {
+                  const active = tiers.includes(filter.value);
+                  return (
+                    <button
+                      key={filter.value}
+                      onClick={() =>
+                        setTiers((current) =>
+                          active
+                            ? current.filter((t) => t !== filter.value)
+                            : [...current, filter.value],
+                        )
+                      }
+                      style={{
+                        padding: "3px 9px",
+                        fontSize: 11,
+                        borderRadius: 5,
+                        cursor: "pointer",
+                        color: active ? filter.color : "var(--c-t2)",
+                        background: active
+                          ? `color-mix(in srgb, ${filter.color} 12%, transparent)`
+                          : "var(--c-raised)",
+                        border: `1px solid ${
+                          active
+                            ? `color-mix(in srgb, ${filter.color} 30%, transparent)`
+                            : "var(--c-hairline)"
+                        }`,
+                      }}
+                    >
+                      {filter.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <LeadTable
+              leads={leads}
+              loading={loading}
+              selectedId={selectedId}
+              filtersActive={filtersActive}
+              onSelect={(lead) => setSelectedId(lead.company_id)}
+            />
+          </>
+        )}
+
+        {tab === "events" && (
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <EventsTab events={events} loading={loading} />
+          </div>
+        )}
+        {tab === "errors" && (
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <ErrorsTab errors={errors} loading={loading} />
+          </div>
+        )}
+      </div>
 
       {selected && (
-        <LeadDetail
+        <LeadDrawer
           lead={selected}
           onClose={() => setSelectedId(undefined)}
           onOutreachChange={applyOutreach}
