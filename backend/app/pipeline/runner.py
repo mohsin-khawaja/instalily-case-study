@@ -40,6 +40,22 @@ from .stages import (
 logger = logging.getLogger(__name__)
 
 
+def _checkpoint_wal(engine) -> None:
+    """Fold the write-ahead log back into the database file.
+
+    In WAL mode a finished run leaves most of its data in `leads.db-wal`. That
+    sidecar is not committed, so without this the repo would carry a database
+    file that is technically valid and completely empty.
+    """
+    if not engine.url.drivername.startswith("sqlite"):
+        return
+    try:
+        with engine.connect() as connection:
+            connection.exec_driver_sql("PRAGMA wal_checkpoint(TRUNCATE)")
+    except Exception as exc:  # noqa: BLE001 -- a failed checkpoint must not fail the run
+        logger.warning("wal checkpoint failed: %s", exc)
+
+
 class PipelineRunner:
     def __init__(
         self,
@@ -92,7 +108,9 @@ class PipelineRunner:
             session.add(run_row)
             session.commit()
             session.refresh(run_row)
-            return run_row
+
+        _checkpoint_wal(self.engine)
+        return run_row
 
     async def _execute(self, ctx: RunContext, run_row: PipelineRun) -> None:
         events: list[Event] = []

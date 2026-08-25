@@ -243,3 +243,21 @@ def test_summary_and_error_log_scope_to_the_latest_run(session):
         assert len(client.get("/api/errors?run_id=all").json()) == 4
     finally:
         app.dependency_overrides.clear()
+
+
+async def test_run_leaves_a_self_contained_database_file(tmp_path, monkeypatch):
+    """WAL data must be folded back in, or the committed db file is empty."""
+    from sqlmodel import create_engine
+
+    db_path = tmp_path / "leads.db"
+    engine = create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
+    monkeypatch.setattr("app.config.RAW_CACHE_DIR", tmp_path / "raw5")
+
+    runner = PipelineRunner(
+        mode=PipelineMode.CACHED, stages=[StageName.QUALIFY], engine=engine
+    )
+    await runner.run()
+
+    wal = tmp_path / "leads.db-wal"
+    assert db_path.stat().st_size > 4096  # more than an empty header page
+    assert not wal.exists() or wal.stat().st_size == 0
