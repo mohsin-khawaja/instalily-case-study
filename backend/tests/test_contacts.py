@@ -470,3 +470,37 @@ async def test_apollo_people_search_retires_on_quota_exhaustion(monkeypatch, ave
     for _ in range(3):
         await provider.find_contacts(avery, icp.TARGET_TITLES)
     assert calls["n"] == 1
+
+
+async def test_a_surname_matching_the_company_is_not_proof_of_employment(cache, avery):
+    """"Alan Fellers" is not evidence of working at Fellers."""
+    from app.integrations.contacts.public_web import PublicWebContactProvider
+    from app.services.search.base import SearchResult
+
+    avery.name = "Fellers"
+    avery.canonical_name = "fellers"
+
+    results = [
+        SearchResult(
+            url="https://www.linkedin.com/in/alan-fellers",
+            title="Alan Fellers - Director, Conflicts of Interest Program",
+            snippet="A university office.",
+        ),
+        SearchResult(
+            url="https://www.linkedin.com/in/justin-real",
+            title="Justin Marsh - Director of Product Management",
+            snippet="Fellers — wrap and graphics distribution",
+        ),
+    ]
+
+    def handler(request):
+        return httpx.Response(404)
+
+    client = _REAL_ASYNC_CLIENT(transport=httpx.MockTransport(handler), follow_redirects=True)
+    async with Fetcher(live=True, cache=cache, client=client) as fetcher:
+        provider = PublicWebContactProvider(fetcher, _FakeSearch(results))
+        contacts = await provider.find_contacts(avery, icp.TARGET_TITLES, limit=3)
+
+    names = [c.full_name for c in contacts]
+    assert "Justin Marsh" in names
+    assert "Alan Fellers" not in names

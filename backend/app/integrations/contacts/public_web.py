@@ -162,10 +162,10 @@ class PublicWebContactProvider:
                 match = _LINKEDIN_PROFILE.search(result.url)
                 if not match or match.group(0) in seen:
                     continue
-                if not _mentions_company(result, short):
-                    continue
                 name, role = _split_linkedin_title(result.title)
                 if not name or _is_stale_role(role):
+                    continue
+                if not _mentions_company(result, short, person_name=name):
                     continue
 
                 relevance = title_relevance(role, target_titles)
@@ -219,9 +219,17 @@ def _short_name(name: str) -> str:
     return " ".join(trimmed) or name
 
 
-def _mentions_company(result, short_name: str) -> bool:
-    """Guard against a profile that merely ranks for the query."""
+def _mentions_company(result, short_name: str, person_name: str = "") -> bool:
+    """Guard against a profile that merely ranks for the query.
+
+    The person's own name is excluded from the haystack first: when the company
+    is named after its founders, a surname match alone is not evidence of
+    employment. "Alan Fellers - Director, Conflicts of Interest Program" would
+    otherwise pass as a Fellers employee.
+    """
     haystack = f"{result.title} {result.snippet}".lower()
+    for part in person_name.lower().split():
+        haystack = haystack.replace(part, " ")
     return short_name.lower() in haystack
 
 
