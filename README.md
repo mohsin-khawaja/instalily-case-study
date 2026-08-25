@@ -58,6 +58,7 @@ Everything above runs with an empty `.env`. Two keys unlock the rest:
 | Variable | Effect when set |
 |---|---|
 | `ANTHROPIC_API_KEY` | Enrichment reads pages with Claude instead of keyword matching; qualification rationales and outreach emails are model-written instead of templated. |
+| `APOLLO_API_KEY` (+ `CONTACT_PROVIDERS=apollo,public_web,mock`) | Real decision-makers with LinkedIn URLs, instead of mock placeholders. |
 | `SERPER_API_KEY` (+ `SEARCH_PROVIDER=serper`) | Company discovery, website resolution, revenue lookup and LinkedIn contact search all switch to a real search index. |
 
 With neither, every one of those paths has a deterministic fallback and the run
@@ -156,6 +157,7 @@ order; unconfigured providers are skipped, never crashed on.
 
 | Provider | State |
 |---|---|
+| `ApolloProvider` | Working, credential-gated. Real named decision-makers with LinkedIn URLs on a free tier — the fastest way to fill the "who do I actually email" gap. Set `APOLLO_API_KEY` and put `apollo` first in the chain. |
 | `PublicWebContactProvider` | Working. Follows the site's own navigation to leadership pages, plus site-restricted LinkedIn search when a search provider is configured. |
 | `MockContactProvider` | Deterministic fixtures for tests and offline demos. Always `confidence=0.0` and `provider="mock"` so placeholder data can never be mistaken for sourced data. |
 | `ClayProvider` | Complete but credential-gated. Implements the real table-webhook → poll/callback flow. Set `CLAY_API_KEY` + `CLAY_WEBHOOK_URL`. |

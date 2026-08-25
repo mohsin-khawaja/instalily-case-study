@@ -29,6 +29,7 @@ class Settings(BaseSettings):
 
     # Contacts
     contact_providers: str = "public_web,mock"
+    apollo_api_key: str | None = None
     clay_api_key: str | None = None
     clay_webhook_url: str | None = None
     sales_nav_token: str | None = None

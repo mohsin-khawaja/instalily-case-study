@@ -7,6 +7,7 @@ import logging
 from ...config import get_settings
 from ...services.http import Fetcher
 from ...services.search.base import SearchProvider
+from .apollo import ApolloProvider
 from .base import ContactProvider, classify_seniority, sales_navigator_url, title_relevance
 from .clay import ClayProvider
 from .mock import MockContactProvider
@@ -16,6 +17,7 @@ from .sales_navigator import SalesNavigatorProvider
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "ApolloProvider",
     "ClayProvider",
     "ContactProvider",
     "MockContactProvider",
@@ -39,6 +41,8 @@ def build_contact_chain(
     for name in names:
         if name == "public_web":
             provider: ContactProvider = PublicWebContactProvider(fetcher, search)
+        elif name == "apollo":
+            provider = ApolloProvider()
         elif name == "clay":
             provider = ClayProvider()
         elif name == "sales_navigator":

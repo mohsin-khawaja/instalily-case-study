@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 
+from app.config import get_settings
 from app.integrations.contacts import build_contact_chain
 from app.integrations.contacts.base import (
     classify_seniority,
@@ -125,3 +128,140 @@ async def test_public_web_returns_nothing_rather_than_guessing(cache, avery):
             avery, icp.TARGET_TITLES
         )
     assert contacts == []
+
+
+# --- Apollo ---------------------------------------------------------------
+
+
+def _apollo_person(**overrides) -> dict:
+    base = {
+        "name": "Dana Whitfield",
+        "title": "Vice President, Product Development",
+        "linkedin_url": "https://www.linkedin.com/in/dana-whitfield",
+        "email": "dana@acme.test",
+    }
+    return {**base, **overrides}
+
+
+# Captured before any monkeypatching: the fakes below replace
+# httpx.AsyncClient globally, so building one through the patched name would
+# recurse into itself.
+_REAL_ASYNC_CLIENT = httpx.AsyncClient
+
+
+def _apollo_client(handler) -> httpx.AsyncClient:
+    return _REAL_ASYNC_CLIENT(transport=httpx.MockTransport(handler))
+
+
+async def test_apollo_is_skipped_without_a_key(avery):
+    from app.integrations.contacts.apollo import ApolloProvider
+
+    provider = ApolloProvider(api_key=None)
+    assert provider.is_configured() is False
+    assert await provider.find_contacts(avery, icp.TARGET_TITLES) == []
+
+
+async def test_apollo_refuses_to_match_a_company_with_no_domain(monkeypatch, avery):
+    from app.integrations.contacts import apollo
+
+    avery.domain = None
+    called = {"n": 0}
+
+    def handler(request):
+        called["n"] += 1
+        return httpx.Response(200, json={"people": []})
+
+    monkeypatch.setattr(
+        apollo.httpx, "AsyncClient", lambda **kw: _apollo_client(handler)
+    )
+    provider = apollo.ApolloProvider(api_key="k")
+    assert await provider.find_contacts(avery, icp.TARGET_TITLES) == []
+    assert called["n"] == 0  # never spends a credit on an ambiguous match
+
+
+async def test_apollo_maps_a_person_into_a_contact(monkeypatch, avery):
+    from app.integrations.contacts import apollo
+
+    captured = {}
+
+    def handler(request):
+        captured["body"] = json.loads(request.content)
+        captured["key"] = request.headers.get("x-api-key")
+        return httpx.Response(200, json={"people": [_apollo_person()]})
+
+    monkeypatch.setattr(
+        apollo.httpx, "AsyncClient", lambda **kw: _apollo_client(handler)
+    )
+    contacts = await apollo.ApolloProvider(api_key="secret").find_contacts(
+        avery, icp.TARGET_TITLES, limit=2
+    )
+
+    assert captured["key"] == "secret"
+    assert captured["body"]["q_organization_domains_list"] == ["averydennison.com"]
+    contact = contacts[0]
+    assert contact.full_name == "Dana Whitfield"
+    assert contact.seniority is Seniority.VP
+    assert contact.linkedin_url.endswith("dana-whitfield")
+    assert contact.provider == "apollo"
+    assert contact.sources
+
+
+async def test_apollo_drops_locked_email_placeholders(monkeypatch, avery):
+    from app.integrations.contacts import apollo
+
+    def handler(request):
+        return httpx.Response(
+            200,
+            json={"people": [_apollo_person(email="email_not_unlocked@domain.com")]},
+        )
+
+    monkeypatch.setattr(
+        apollo.httpx, "AsyncClient", lambda **kw: _apollo_client(handler)
+    )
+    contacts = await apollo.ApolloProvider(api_key="k").find_contacts(avery, icp.TARGET_TITLES)
+    assert contacts[0].email is None
+
+
+async def test_apollo_ranks_the_best_title_first(monkeypatch, avery):
+    from app.integrations.contacts import apollo
+
+    def handler(request):
+        return httpx.Response(
+            200,
+            json={
+                "people": [
+                    _apollo_person(name="Sam Rep", title="Regional Sales Representative"),
+                    _apollo_person(name="Dana Whitfield", title="Director of R&D"),
+                ]
+            },
+        )
+
+    monkeypatch.setattr(
+        apollo.httpx, "AsyncClient", lambda **kw: _apollo_client(handler)
+    )
+    contacts = await apollo.ApolloProvider(api_key="k").find_contacts(avery, ["Director of R&D"])
+    assert contacts[0].full_name == "Dana Whitfield"
+
+
+async def test_apollo_surfaces_a_rate_limit_as_no_results_not_a_crash(monkeypatch, avery):
+    from app.integrations.contacts import apollo
+
+    def handler(request):
+        return httpx.Response(429, json={"error": "out of credits"})
+
+    monkeypatch.setattr(
+        apollo.httpx, "AsyncClient", lambda **kw: _apollo_client(handler)
+    )
+    assert await apollo.ApolloProvider(api_key="k").find_contacts(avery, icp.TARGET_TITLES) == []
+
+
+def test_apollo_joins_the_chain_when_configured(cache, monkeypatch):
+    monkeypatch.setenv("APOLLO_API_KEY", "k")
+    get_settings.cache_clear()
+    try:
+        chain = build_contact_chain(
+            Fetcher(cache=cache), None, names=["apollo", "clay", "public_web"]
+        )
+        assert [p.name for p in chain] == ["apollo", "public_web"]
+    finally:
+        get_settings.cache_clear()
