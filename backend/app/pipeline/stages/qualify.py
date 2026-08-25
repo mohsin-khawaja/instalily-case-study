@@ -9,12 +9,14 @@ from the same breakdown.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 
 from pydantic import BaseModel, Field
 from sqlmodel import select
 
+from ...config import get_settings
 from ...models.domain import Company, Event, Evidence, Qualification, utcnow
 from ...models.enums import RecordStatus, StageName, Tier
 from ...scoring.score import ScoredLead, score_company
@@ -27,6 +29,9 @@ STAGE = StageName.QUALIFY
 
 _NUMERIC_CLAIM = re.compile(r"(\$\s?[\d,.]+\s*(?:billion|million|bn|m\b|b\b)|\b\d{3,}\b)",
                             re.IGNORECASE)
+
+# Tiers worth spending a reasoning-model call on.
+LLM_RATIONALE_TIERS = (Tier.A, Tier.B)
 
 
 class RationaleOut(BaseModel):
@@ -42,23 +47,35 @@ async def run(ctx: RunContext, companies: list[Company]) -> list[Qualification]:
         q.company_id: q for q in ctx.session.exec(select(Qualification)).all()
     }
 
+    semaphore = asyncio.Semaphore(get_settings().pipeline_concurrency)
     out: list[Qualification] = []
-    for company in companies:
+
+    async def qualify_one(company: Company) -> Qualification:
         scored = score_company(company, events)
         qualification = existing.get(company.id) or Qualification(company_id=company.id)
         _apply_score(qualification, scored)
 
-        rationale, flags = await _build_rationale(ctx, company, scored, events)
+        async with semaphore:
+            rationale, flags = await _build_rationale(ctx, company, scored, events)
+
+        used_llm = (
+            ctx.llm.enabled
+            and scored.tier in LLM_RATIONALE_TIERS
+            and bool(scored.evidence)
+            and "llm_failed" not in flags
+        )
         qualification.rationale = rationale
         qualification.flags = sorted(set(qualification.flags) | set(flags))
-        qualification.rationale_source = "llm" if ctx.llm.enabled and "llm_failed" not in flags \
-            else "deterministic"
+        qualification.rationale_source = "llm" if used_llm else "deterministic"
         qualification.status = (
             RecordStatus.COMPLETE if qualification.confidence >= 0.5 else RecordStatus.INCOMPLETE
         )
         qualification.updated_at = utcnow()
+        return qualification
+
+    out = list(await asyncio.gather(*(qualify_one(company) for company in companies)))
+    for qualification in out:
         ctx.session.add(qualification)
-        out.append(qualification)
 
     ctx.session.commit()
     ctx.bump("qualifications", len(out))
@@ -79,6 +96,11 @@ async def _build_rationale(
     ctx: RunContext, company: Company, scored: ScoredLead, events: dict[str, Event]
 ) -> tuple[str, list[str]]:
     deterministic = _deterministic_rationale(company, scored, events)
+    # Only qualified leads earn an LLM rationale. Writing prose about a company
+    # that scored 12/100 spends reasoning-model tokens on something no rep will
+    # ever open -- and on a wide run that is most of the corpus.
+    if scored.tier not in LLM_RATIONALE_TIERS:
+        return deterministic, []
     if not ctx.llm.enabled or not scored.evidence:
         return deterministic, []
 

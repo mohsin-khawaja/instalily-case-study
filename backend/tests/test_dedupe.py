@@ -91,3 +91,25 @@ def test_merge_records_never_overwrites_known_values():
     merged = merge_records(primary, incoming)
     assert merged["revenue_est_usd"] == 8_000_000_000
     assert merged["products"] == ["vinyl", "overlaminate"]
+
+
+@pytest.mark.parametrize(
+    "host",
+    ["www.ebay.com", "amazon.co.uk", "www.alibaba.com", "uk.indeed.com",
+     "www.zoominfo.com", "shop.walmart.com"],
+)
+def test_marketplaces_and_directories_are_not_prospects(host):
+    """Better search recall surfaces these for any product query; none is a lead."""
+    from app.pipeline.stages.extract_companies import _LINK_BLOCKLIST
+
+    assert any(bad in host for bad in _LINK_BLOCKLIST), host
+
+
+@pytest.mark.parametrize(
+    "host",
+    ["graphics.averydennison.com", "www.drytac.com", "orafol.com", "briteline.com"],
+)
+def test_real_prospects_are_not_blocked(host):
+    from app.pipeline.stages.extract_companies import _LINK_BLOCKLIST
+
+    assert not any(bad in host for bad in _LINK_BLOCKLIST), host

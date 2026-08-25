@@ -319,3 +319,50 @@ async def _noop_async(_ctx, _companies):
 
 async def _noop_links(_ctx, _companies, _events):
     return 0
+
+
+async def test_llm_rationales_are_only_spent_on_qualified_leads(ctx, monkeypatch, avery,
+                                                                isa_expo, printing_united):
+    """Reasoning-model tokens must not be spent on companies nobody will open."""
+    from app.models.enums import Tier
+    from app.pipeline.stages import qualify as qualify_stage
+
+    for event in (isa_expo, printing_united):
+        ctx.session.add(event)
+
+    off_icp = Company(
+        name="Northwind Staffing", canonical_name="northwind staffing",
+        website="https://northwind.test/", industry="Staffing and recruiting",
+        description="Recruiting and consulting services.", enriched=True,
+    )
+    for company in (avery, off_icp):
+        ctx.session.add(company)
+    ctx.session.commit()
+
+    asked_for: list[str] = []
+
+    class _CountingLLM:
+        enabled = True
+        model_reasoning = "claude-sonnet-5"
+        model_extraction = "claude-haiku-4-5"
+
+        class _Usage:
+            def as_dict(self):
+                return {}
+
+        usage = _Usage()
+
+        async def structured(self, schema_model, *, prompt, system, model=None):
+            asked_for.append(prompt.split("\n")[0])
+            return qualify_stage.RationaleOut(rationale="Grounded prose.", cited_source_urls=[])
+
+    ctx.llm = _CountingLLM()
+    results = await qualify_stage.run(ctx, [avery, off_icp])
+
+    by_name = {q.company_id: q for q in results}
+    assert by_name[avery.id].tier in (Tier.A, Tier.B)
+    assert by_name[avery.id].rationale_source == "llm"
+    assert by_name[off_icp.id].tier is Tier.DISQUALIFIED
+    assert by_name[off_icp.id].rationale_source == "deterministic"
+    assert by_name[off_icp.id].rationale  # still explained, just not by the LLM
+    assert len(asked_for) == 1, f"LLM called {len(asked_for)} times, expected 1"

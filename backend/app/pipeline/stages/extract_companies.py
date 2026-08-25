@@ -34,10 +34,20 @@ STAGE = StageName.EXTRACT_COMPANIES
 
 # Hosts that appear on every exhibitor page and are never the exhibitor.
 _LINK_BLOCKLIST = (
+    # Social, platforms, event plumbing
     "facebook.", "twitter.", "x.com", "linkedin.", "instagram.", "youtube.", "tiktok.",
-    "google.", "apple.com", "microsoft.com", "adobe.com", "mapyourshow.com", "onpeak.com",
-    "eventbrite.", "cvent.com", "safelinks.protection.outlook.com", "wikipedia.org",
-    "gov", "hotels.com", "marriott.com", "hilton.com", "share.google", "napco.com",
+    "pinterest.", "reddit.", "google.", "apple.com", "microsoft.com", "adobe.com",
+    "mapyourshow.com", "onpeak.com", "eventbrite.", "cvent.com",
+    "safelinks.protection.outlook.com", "wikipedia.org", "share.google", "napco.com",
+    "gov", "hotels.com", "marriott.com", "hilton.com",
+    # Marketplaces and general retail. A better search provider surfaces these
+    # for any product query; none of them is a Tedlar prospect.
+    "ebay.", "amazon.", "alibaba.", "aliexpress.", "walmart.", "etsy.", "temu.",
+    "wayfair.", "homedepot.", "lowes.", "target.com", "costco.", "wish.com",
+    "indiamart.", "made-in-china.com", "dhgate.",
+    # Directories, review sites and job boards
+    "yelp.", "glassdoor.", "indeed.", "crunchbase.com", "zoominfo.com", "dnb.com",
+    "bloomberg.com", "yellowpages.", "manta.com", "trustpilot.",
 )
 _MIN_NAME_LEN = 3
 _MAX_NAME_LEN = 90

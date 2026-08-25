@@ -168,7 +168,7 @@ order; unconfigured providers are skipped, never crashed on.
 
 | Provider | State |
 |---|---|
-| `ApolloProvider` | Working, credential-gated. Real named decision-makers with LinkedIn URLs on a free tier — the fastest way to fill the "who do I actually email" gap. Set `APOLLO_API_KEY` and put `apollo` first in the chain. |
+| `ApolloProvider` | Working, credential-gated. **Note:** Apollo gates *people search* behind paid plans — on the free tier it returns 403 and the chain falls through to the next provider. Its *organization* endpoint is open on free, and the pipeline uses it for firmographics (revenue, headcount, HQ, industry keywords), which is what lifts the size component off zero. Real named decision-makers with LinkedIn URLs on a free tier — the fastest way to fill the "who do I actually email" gap. Set `APOLLO_API_KEY` and put `apollo` first in the chain. |
 | `PublicWebContactProvider` | Working. Follows the site's own navigation to leadership pages, plus site-restricted LinkedIn search when a search provider is configured. |
 | `MockContactProvider` | Deterministic fixtures for tests and offline demos. Always `confidence=0.0` and `provider="mock"` so placeholder data can never be mistaken for sourced data. |
 | `ClayProvider` | Complete but credential-gated. Implements the real table-webhook → poll/callback flow. Set `CLAY_API_KEY` + `CLAY_WEBHOOK_URL`. |
@@ -230,6 +230,28 @@ All of it is visible in the dashboard's error tab — the point is that failures
 data, not silence.
 
 ---
+
+## Performance and unit economics
+
+Enrichment is almost entirely network wait — four or five fetches plus an LLM call
+per company, each against a different host — so it runs **bounded-concurrent**
+(`PIPELINE_CONCURRENCY`, default 6) rather than one company at a time. The fetcher
+keeps its own global cap and a per-host delay underneath, so parallelism happens
+*across* hosts and no single site sees a burst.
+
+LLM spend is targeted rather than uniform: **only tier A/B leads earn a
+reasoning-model rationale**. On a wide run most of the corpus is disqualified, and
+writing prose about a company that scored 12/100 spends Sonnet tokens on something
+no rep will open — those still get a deterministic rationale from the same score
+breakdown. Extraction runs on Haiku throughout.
+
+Every run records LLM token usage and an estimated cost, and the dashboard turns
+that into **cost per qualified lead** — the number a GTM team actually budgets
+against. It is on `PipelineRun.counts` and `/api/summary`.
+
+Prompt caching is deliberately *not* used: the system prompts here are a few
+hundred tokens, well under the ~1024-token minimum cacheable prefix, so it would
+add complexity and cache nothing.
 
 ## Scaling
 
