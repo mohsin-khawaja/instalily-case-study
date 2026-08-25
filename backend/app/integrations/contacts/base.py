@@ -66,6 +66,27 @@ def title_relevance(title: str | None, target_titles: list[str]) -> float:
     return round(best, 2)
 
 
+def function_fit(title: str | None) -> float:
+    """How well a title's *function* matches what Tedlar is sold into.
+
+    Positive for product, R&D, innovation and materials roles; negative for
+    finance, HR and legal. Returned as a ranking adjustment, not a filter -- a
+    Managing Director at a small manufacturer is still worth surfacing.
+    """
+    text = (title or "").lower()
+    if not text:
+        return 0.0
+    score = 0.0
+    for term, bonus in icp.FUNCTION_BONUS.items():
+        if term in text:
+            score = max(score, bonus)
+    penalty = 0.0
+    for term, malus in icp.FUNCTION_PENALTY.items():
+        if term in text:
+            penalty = min(penalty, malus)
+    return round(score + penalty, 2)
+
+
 def sales_navigator_url(full_name: str, company_name: str) -> str:
     """Deep link into a Sales Navigator lead search.
 

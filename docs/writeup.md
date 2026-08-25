@@ -123,11 +123,11 @@ template built from the same evidence, labelled as such in the UI.
 
 ## 4. Implementation results
 
-Pipeline runs end to end in both modes, and a cached replay reproduces a live run exactly — same companies, same enrichments, same handled errors — in seconds against minutes live. A full live run with Anthropic, Serper and Apollo configured sources **94 companies**, enriches **88** from their own sites, qualifies **5** as tier A/B, and produces **9 named decision-makers** with LinkedIn URLs and **9 drafted emails** — in **5.5 minutes for $0.55**, or **$0.11 per qualified lead**.
+Pipeline runs end to end in both modes, and a cached replay reproduces a live run exactly — same companies, same enrichments, same handled errors — in seconds against minutes live. A full live run with Anthropic, Serper and Apollo configured sources **89 companies**, enriches **83** from their own sites, qualifies **6** as tier A/B, and produces **9 named decision-makers** and **7 drafted emails** — in about six minutes for **$0.54**, or **$0.09 per qualified lead**. Leads are exportable as CSV with their provenance columns, because a sales team lives in a sheet rather than in this dashboard.
 
-Making it fast was measured, not assumed. The same corpus took 29.7 minutes and 185 LLM calls before enrichment and qualification were parallelised and reasoning-model rationales were gated to qualified tiers: **roughly 5x faster on 45% fewer calls**, with the same lead output.
+Making it fast and accurate was measured, not assumed. The same corpus once took 29.7 minutes and 185 LLM calls before enrichment and qualification were parallelised and reasoning-model rationales were gated to qualified tiers. Separately, the scorer's text budget turned out to be truncating the median company at exactly the cap — raising it, and crawling the durability and technical pages where UV and warranty language actually lives, cut pain-point-alignment zeroes from 96-in-116 to 62-in-94 and produced the first tier-A leads.
 
-**128 tests, no network**, covering scoring bands and tier boundaries, deduplication, LLM-output repair and failure, cache/retry behaviour, provider fallback and rate-limit circuit breaking, outreach validation, and the resilience guarantee — a stage that raises does not lose prior work, and later stages still run.
+**146 tests, no network**, covering scoring bands and tier boundaries, deduplication, LLM-output repair and failure, cache/retry behaviour, provider fallback and rate-limit circuit breaking, employer-match precision, outreach validation, CSV provenance, and the resilience guarantee — a stage that raises does not lose prior work, and later stages still run.
 
 The dashboard shows summary metrics, live stage progress, filters by event / tier /
 score / text, a lead table, and a detail panel with the score breakdown, rationale,

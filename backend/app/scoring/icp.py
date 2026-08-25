@@ -153,6 +153,35 @@ TARGET_TITLES = [
     "Director of Business Development",
     "Director of Strategic Partnerships",
 ]
+# Function fit. Seniority alone ranks a Finance Director above a Product Manager,
+# but Tedlar is sold into product, R&D and materials decisions -- so the function
+# a person owns matters as much as how senior they are.
+FUNCTION_BONUS = {
+    "product": 0.45,
+    "research": 0.45,
+    "r&d": 0.45,
+    "innovation": 0.45,
+    "development": 0.35,
+    "technical": 0.30,
+    "materials": 0.30,
+    "engineering": 0.30,
+    "operations": 0.15,
+    "partnership": 0.15,
+    "business development": 0.15,
+}
+FUNCTION_PENALTY = {
+    "finance": -0.35,
+    "accounting": -0.35,
+    "human resources": -0.40,
+    "recruit": -0.40,
+    "legal": -0.35,
+    "compliance": -0.35,
+    "conflicts of interest": -0.50,
+    "customer service": -0.25,
+    "creative": -0.15,
+    "social media": -0.30,
+}
+
 SENIORITY_PATTERNS = {
     "c_level": ["chief", "cto", "ceo", "coo", "cmo", "president"],
     "vp": ["vp", "vice president", "svp", "evp"],

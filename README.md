@@ -181,6 +181,13 @@ two secrets. No caller changes.
 
 ## Outreach
 
+**No outreach is ever addressed to a placeholder person.** The mock provider
+exists to exercise the UI and the tests; a personalised email to an invented
+recipient reads as real and could be sent, so contacts from placeholder
+providers are skipped at the drafting stage and the refusal is recorded in the
+error log.
+
+
 Drafted only for tier A/B leads that have both a contact and at least one piece of
 evidence. The model gets verified facts, their source URLs, the score breakdown,
 the contact's title, and the Tedlar value-prop list — and must return the hook
@@ -203,6 +210,7 @@ and the dashboard labels which is which.
 | `GET` | `/api/events` | Events and associations, with company counts |
 | `GET` | `/api/leads` | Lead rows; filter by `tier`, `event_id`, `min_score`, `industry`, `q`, `has_contact` |
 | `GET` | `/api/leads/{id}` | One lead with evidence, contacts and drafts |
+| `GET` | `/api/leads.csv` | Export the current tier/score filters as CSV, provenance columns included |
 | `PATCH` | `/api/outreach/{id}` | Save an edit / toggle approval |
 | `GET` | `/api/errors` | The stage error log |
 | `POST` | `/api/pipeline/run` | Start a run (`cached` or `live`) |
@@ -237,13 +245,13 @@ A full live run with Anthropic, Serper and Apollo configured:
 
 | | Value |
 |---|---|
-| Companies sourced / enriched | 94 / 88 |
-| Qualified leads (tier A/B) | 5 |
+| Companies sourced / enriched | 89 / 83 |
+| Qualified leads | 2 tier A, 4 tier B |
 | Named decision-makers, with LinkedIn URLs | 9 |
-| Outreach drafts (LLM-written, evidence-validated) | 9 |
-| Wall clock | 5.5 min |
-| LLM calls / estimated cost | 102 / $0.55 |
-| **Cost per qualified lead** | **$0.11** |
+| Outreach drafts (LLM-written, evidence-validated) | 7 |
+| Wall clock | ~6 min |
+| LLM calls / estimated cost | 96 / $0.54 |
+| **Cost per qualified lead** | **$0.09** |
 
 The same corpus took **29.7 minutes and 185 LLM calls** before enrichment and
 qualification were parallelised and reasoning-model rationales were gated to

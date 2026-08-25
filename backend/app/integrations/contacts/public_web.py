@@ -17,7 +17,7 @@ from ...models.enums import Seniority
 from ...services.extract import extract_links, html_to_text
 from ...services.http import Fetcher
 from ...services.search.base import SearchProvider
-from .base import classify_seniority, sales_navigator_url, title_relevance
+from .base import classify_seniority, function_fit, sales_navigator_url, title_relevance
 
 logger = logging.getLogger(__name__)
 
@@ -170,13 +170,14 @@ class PublicWebContactProvider:
 
                 relevance = title_relevance(role, target_titles)
                 seniority = classify_seniority(role)
+                fit = function_fit(role)
                 if seniority is Seniority.OTHER and relevance < 0.34:
                     continue  # not a decision-maker by either measure
 
                 seen.add(match.group(0))
                 candidates.append(
                     (
-                        relevance + _SENIORITY_WEIGHT.get(seniority, 0.0),
+                        relevance + _SENIORITY_WEIGHT.get(seniority, 0.0) + fit,
                         Contact(
                             company_id=company.id,
                             full_name=name,
@@ -187,7 +188,7 @@ class PublicWebContactProvider:
                             provider=self.name,
                             # Search-snippet sourced: weaker than a company's own
                             # leadership page, strong enough for a rep to verify.
-                            confidence=round(min(0.8, 0.5 + relevance / 4), 2),
+                            confidence=round(min(0.8, 0.5 + relevance / 4 + max(fit, 0) / 4), 2),
                             sources=[
                                 SourceRef(
                                     url=result.url, title=result.title,
@@ -219,18 +220,57 @@ def _short_name(name: str) -> str:
     return " ".join(trimmed) or name
 
 
-def _mentions_company(result, short_name: str, person_name: str = "") -> bool:
-    """Guard against a profile that merely ranks for the query.
+# Short company names are also ordinary words and surnames — "Gregory", "Capital",
+# "Fellers". Below this length a bare mention proves nothing.
+_DISTINCTIVE_NAME_LEN = 8
 
-    The person's own name is excluded from the haystack first: when the company
-    is named after its founders, a surname match alone is not evidence of
-    employment. "Alan Fellers - Director, Conflicts of Interest Program" would
-    otherwise pass as a Fellers employee.
+
+def _mentions_company(result, short_name: str, person_name: str = "") -> bool:
+    """Decide whether a profile actually belongs to this company.
+
+    Two traps, both seen in real output:
+    * the company is named after its founders, so the person's own surname
+      matches ("Alan Fellers — Director, Conflicts of Interest Program");
+    * the company name is a common word, so an unrelated profile mentions it in
+      passing ("VP of Sales, Family Fresh Foods" ranking for "Gregory").
+
+    So: strip the person's name first, then require an employer-shaped match
+    ("at Acme", "@ Acme", "| Acme") unless the name is long enough to stand alone.
     """
     haystack = f"{result.title} {result.snippet}".lower()
     for part in person_name.lower().split():
         haystack = haystack.replace(part, " ")
-    return short_name.lower() in haystack
+
+    needle = short_name.lower()
+    if needle not in haystack:
+        return False
+    if len(needle) >= _DISTINCTIVE_NAME_LEN:
+        return True
+
+    # For a short name, require it to sit where an employer is named.
+    escaped = re.escape(needle)
+    # "… at Fellers", "… @ Fellers", "… | Fellers", "…, Fellers"
+    after_marker = re.compile(rf"(?:\bat\s+|@\s*|[|,·:]\s*|[-—]\s+){escaped}\b", re.IGNORECASE)
+    # Leading position, but only when a separator or a legal suffix follows —
+    # "Fellers — wrap and graphics" is an employer line; "Gregory was a mentor"
+    # is prose that happens to start with a common first name.
+    leading = re.compile(
+        rf"^{escaped}\b\s*(?:$|[|,·:—-]|\((?:inc|llc)|\b(?:inc|llc|ltd|corp|co|usa|group|"
+        rf"international|graphics|films)\b)",
+        re.IGNORECASE,
+    )
+    fields = (
+        _strip_name(result.title, person_name).strip(),
+        _strip_name(result.snippet or "", person_name).strip(),
+    )
+    return any(after_marker.search(f) or leading.search(f) for f in fields)
+
+
+def _strip_name(text: str, person_name: str) -> str:
+    out = text.lower()
+    for part in person_name.lower().split():
+        out = out.replace(part, " ")
+    return out
 
 
 def _is_stale_role(role: str | None) -> bool:

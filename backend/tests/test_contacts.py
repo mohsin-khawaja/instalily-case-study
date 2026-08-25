@@ -504,3 +504,111 @@ async def test_a_surname_matching_the_company_is_not_proof_of_employment(cache, 
     names = [c.full_name for c in contacts]
     assert "Justin Marsh" in names
     assert "Alan Fellers" not in names
+
+
+# --- Function fit ranking -------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("title", "expect"),
+    [
+        ("Director of Product Management", "positive"),
+        ("VP Innovation", "positive"),
+        ("Head of Materials Science", "positive"),
+        ("Finance Director", "negative"),
+        ("Director, Conflicts of Interest Programs", "negative"),
+        ("Managing Director", "neutral"),
+        (None, "neutral"),
+    ],
+)
+def test_function_fit_prefers_product_and_rd_over_finance(title, expect):
+    from app.integrations.contacts.base import function_fit
+
+    value = function_fit(title)
+    if expect == "positive":
+        assert value > 0
+    elif expect == "negative":
+        assert value < 0
+    else:
+        assert value == 0
+
+
+async def test_product_lead_outranks_finance_lead_at_the_same_seniority(cache, avery):
+    """Seniority alone would tie these; the function a person owns breaks it."""
+    from app.integrations.contacts.public_web import PublicWebContactProvider
+    from app.services.search.base import SearchResult
+
+    results = [
+        SearchResult(
+            url="https://www.linkedin.com/in/fin-1",
+            title="Robin Hale - Finance Director",
+            snippet="Avery Dennison",
+        ),
+        SearchResult(
+            url="https://www.linkedin.com/in/prod-2",
+            title="Sam Ellis - Director of Product Development",
+            snippet="Avery Dennison",
+        ),
+    ]
+
+    def handler(request):
+        return httpx.Response(404)
+
+    client = _REAL_ASYNC_CLIENT(transport=httpx.MockTransport(handler), follow_redirects=True)
+    async with Fetcher(live=True, cache=cache, client=client) as fetcher:
+        provider = PublicWebContactProvider(fetcher, _FakeSearch(results))
+        contacts = await provider.find_contacts(avery, icp.TARGET_TITLES, limit=2)
+
+    assert contacts[0].full_name == "Sam Ellis"
+    assert contacts[0].confidence > contacts[1].confidence
+
+
+@pytest.mark.parametrize(
+    ("title", "snippet", "company", "person", "expected"),
+    [
+        # Employer named explicitly — the common, easy case.
+        ("Doug Smith - Vice President at FELLERS", "", "Fellers", "Doug Smith", True),
+        ("Kieran Blacknall - Managing Director at Drytac", "", "Drytac", "Kieran Blacknall", True),
+        # LinkedIn's company line leads the snippet.
+        (
+            "Justin Marsh - Director of Product Management",
+            "Fellers — wrap and graphics distribution",
+            "Fellers",
+            "Justin Marsh",
+            True,
+        ),
+        (
+            "Bart Natoli - VP Commercial Sales",
+            "Gregory, Inc. · Full-time",
+            "Gregory",
+            "Bart Natoli",
+            True,
+        ),
+        # The company is named after a founder: a surname proves nothing.
+        (
+            "Alan Fellers - Director, Conflicts of Interest Program",
+            "A university office.",
+            "Fellers",
+            "Alan Fellers",
+            False,
+        ),
+        # The company name is an ordinary first name appearing in prose.
+        (
+            "Neal Kasloff - VP of sales, Family Fresh Foods",
+            "Gregory was a mentor to many",
+            "Gregory",
+            "Neal Kasloff",
+            False,
+        ),
+        # A long, distinctive name stands on its own.
+        ("Sam Ellis - Ops Director", "Graphictac USA and Taiwan", "Graphictac", "Sam Ellis", True),
+    ],
+)
+def test_employer_match_separates_employment_from_coincidence(
+    title, snippet, company, person, expected
+):
+    from app.integrations.contacts.public_web import _mentions_company
+    from app.services.search.base import SearchResult
+
+    result = SearchResult(url="https://x.test/", title=title, snippet=snippet)
+    assert _mentions_company(result, company, person) is expected

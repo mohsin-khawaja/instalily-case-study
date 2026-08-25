@@ -110,3 +110,19 @@ def test_template_fallback_only_cites_supplied_evidence(avery):
         ),
         {e["source_url"] for e in evidence},
     )
+
+
+# --- Placeholder contacts -------------------------------------------------
+
+
+def test_mock_and_zero_confidence_contacts_are_treated_as_placeholders():
+    from app.models.domain import Contact
+    from app.pipeline.stages.draft_outreach import _is_placeholder
+
+    assert _is_placeholder(Contact(company_id="c", full_name="Jordan Reed", provider="mock"))
+    assert _is_placeholder(
+        Contact(company_id="c", full_name="Real Person", provider="public_web", confidence=0.0)
+    )
+    assert not _is_placeholder(
+        Contact(company_id="c", full_name="Real Person", provider="public_web", confidence=0.7)
+    )

@@ -78,6 +78,18 @@ cd frontend && npm run dev                     # dashboard on :3000
 Do not run the CLI and the API server against the database at the same time —
 SQLite allows one writer, and the loser blocks until `busy_timeout`.
 
+## Scoring gotchas found the hard way
+
+- **`SITE_TEXT_CAP` is large on purpose.** The scorer keyword-scans this text,
+  which is nearly free, and the LLM only ever sees the first 12k. At 14k the
+  median company was truncated exactly at the cap and pain-point alignment read
+  zero on 96 of 116 records — we were discarding evidence already paid for.
+- **Crawl the durability pages.** UV, weathering and warranty language lives on
+  product and technical pages, not the homepage. `SUBPAGE_KEYWORDS` targets them.
+- **Rank contacts by function, not just seniority.** Seniority alone puts a
+  Finance Director above a Product Manager; `function_fit` in
+  `integrations/contacts/base.py` corrects for what Tedlar is actually sold into.
+
 ## Docs are generated
 
 `docs/results.json` comes from `backend/results_snapshot.py`; the deck

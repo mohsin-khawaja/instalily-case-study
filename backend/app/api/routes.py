@@ -9,10 +9,12 @@ for a single-operator tool, and the obvious seam if this ever needs a real queue
 from __future__ import annotations
 
 import asyncio
+import csv
+import io
 import logging
 from datetime import datetime
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from sqlmodel import Session, func, select
 
 from ..config import get_settings
@@ -144,6 +146,81 @@ def list_leads(
         return True
 
     return [lead for lead in leads if keep(lead)][:limit]
+
+
+@router.get("/leads.csv")
+def export_leads_csv(
+    session: Session = Depends(get_session),
+    tier: list[Tier] | None = Query(default=None),
+    min_score: float = 0.0,
+) -> Response:
+    """One row per lead, ready to paste into a CRM or a spreadsheet.
+
+    A sales team does not live in this dashboard; it lives in a sheet. The
+    provenance columns come along -- a row that cannot be traced back to a URL
+    is not worth exporting.
+    """
+    leads = [
+        lead
+        for lead in _build_leads(session)
+        if (not tier or lead.tier in tier) and lead.score_total >= min_score
+    ]
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(
+        [
+            "company", "domain", "website", "industry", "hq",
+            "revenue_band", "employee_band", "size_source",
+            "score", "tier", "confidence", "flags",
+            "events", "rationale", "rationale_source", "evidence_urls",
+            "contact_name", "contact_title", "contact_linkedin",
+            "contact_provider", "contact_confidence",
+            "outreach_subject", "outreach_body", "outreach_generator",
+            "outreach_approved", "hook_source_url",
+        ]
+    )
+    for lead in leads:
+        contact = lead.contacts[0] if lead.contacts else None
+        draft = lead.outreach[0] if lead.outreach else None
+        writer.writerow(
+            [
+                lead.company_name,
+                lead.domain or "",
+                lead.website or "",
+                lead.industry or "",
+                lead.hq_location or "",
+                lead.revenue_band or "",
+                lead.employee_band or "",
+                # Say where the size figure came from, not just what it was.
+                "third_party" if "size_third_party_estimate" in lead.flags else "site",
+                f"{lead.score_total:.0f}",
+                lead.tier.value,
+                f"{lead.confidence:.2f}",
+                "; ".join(lead.flags),
+                "; ".join(e.name for e in lead.events),
+                lead.rationale or "",
+                lead.rationale_source,
+                " ".join(e.get("source_url", "") for e in lead.evidence),
+                contact.full_name if contact else "",
+                contact.title or "" if contact else "",
+                contact.linkedin_url or "" if contact else "",
+                contact.provider if contact else "",
+                f"{contact.confidence:.2f}" if contact else "",
+                draft.subject if draft else "",
+                (draft.edited_body or draft.body) if draft else "",
+                draft.generator if draft else "",
+                "yes" if draft and draft.approved else "no",
+                draft.hook_source_url or "" if draft else "",
+            ]
+        )
+
+    stamp = utcnow().strftime("%Y%m%d")
+    return Response(
+        content=buffer.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="tedlar-leads-{stamp}.csv"'},
+    )
 
 
 @router.get("/leads/{company_id}", response_model=LeadOut)

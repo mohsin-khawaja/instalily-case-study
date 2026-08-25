@@ -49,6 +49,14 @@ class OutreachOut(BaseModel):
     tedlar_value_prop: str = Field(description="The single value proposition you used")
 
 
+# Providers that fabricate people for demo and test purposes.
+PLACEHOLDER_PROVIDERS = frozenset({"mock"})
+
+
+def _is_placeholder(contact: Contact) -> bool:
+    return contact.provider in PLACEHOLDER_PROVIDERS or contact.confidence <= 0.0
+
+
 class OutreachRejected(ValueError):
     """The draft violated the evidence or style contract."""
 
@@ -71,6 +79,20 @@ async def run(ctx: RunContext, contacts: list[Contact]) -> list[OutreachDraft]:
         if company is None or qualification is None:
             continue
         if qualification.tier not in (Tier.A, Tier.B):
+            continue
+        if _is_placeholder(contact):
+            # A personalised email addressed to an invented person is worse than
+            # no email: it reads as real, and a rep could send it. Placeholder
+            # contacts exist to exercise the UI, never to be written to.
+            ctx.record_error(
+                STAGE,
+                ValueError(
+                    f"refusing to draft outreach to a placeholder contact from the "
+                    f"'{contact.provider}' provider"
+                ),
+                entity_type="contact",
+                entity_ref=f"{contact.full_name} @ {company.name}",
+            )
             continue
 
         draft = await _draft_one(ctx, contact, company, qualification)

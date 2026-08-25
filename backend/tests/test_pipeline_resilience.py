@@ -403,3 +403,94 @@ async def test_apollo_quota_exhaustion_stops_calling_and_falls_through(ctx, monk
     # The run records the exhaustion once, not ten times.
     quota_errors = [e for e in ctx.errors if "quota exhausted" in (e.entity_ref or "")]
     assert len(quota_errors) == 1
+
+
+def test_csv_export_carries_provenance_and_respects_filters(session, avery, isa_expo):
+    """An exported row that cannot be traced back to a URL is not worth having."""
+    import csv as _csv
+    import io as _io
+
+    from fastapi.testclient import TestClient
+
+    from app.db import get_session
+    from app.main import app
+    from app.models.domain import Qualification
+    from app.models.enums import Tier
+
+    session.add(isa_expo)
+    avery.event_ids = [isa_expo.id]
+    session.add(avery)
+    session.add(
+        Qualification(
+            company_id=avery.id,
+            score_total=82.0,
+            tier=Tier.A,
+            confidence=0.9,
+            rationale="Strong fit.",
+            rationale_source="llm",
+            evidence=[{"claim": "c", "source_url": "https://graphics.averydennison.com/"}],
+            flags=["size_third_party_estimate"],
+        )
+    )
+    session.commit()
+
+    app.dependency_overrides[get_session] = lambda: session
+    try:
+        client = TestClient(app)
+        response = client.get("/api/leads.csv")
+        assert response.status_code == 200
+        assert "text/csv" in response.headers["content-type"]
+        assert "attachment" in response.headers["content-disposition"]
+
+        rows = list(_csv.DictReader(_io.StringIO(response.text)))
+        assert len(rows) == 1
+        row = rows[0]
+        assert row["company"] == avery.name
+        assert row["tier"] == "A"
+        assert "graphics.averydennison.com" in row["evidence_urls"]
+        # The size figure's origin travels with the number.
+        assert row["size_source"] == "third_party"
+        assert row["events"] == isa_expo.name
+
+        # A filter that excludes everything yields a header and no rows.
+        empty = client.get("/api/leads.csv?min_score=95")
+        assert len(list(_csv.DictReader(_io.StringIO(empty.text)))) == 0
+    finally:
+        app.dependency_overrides.clear()
+
+
+async def test_no_outreach_is_drafted_to_an_invented_person(ctx, avery):
+    """A personalised email to a fabricated recipient is worse than no email."""
+    from app.models.domain import Contact, OutreachDraft, Qualification
+    from app.models.enums import Tier
+    from app.pipeline.stages import draft_outreach
+
+    ctx.session.add(avery)
+    ctx.session.add(
+        Qualification(
+            company_id=avery.id,
+            tier=Tier.A,
+            score_total=80.0,
+            evidence=[
+                {
+                    "claim": "Operates in Tedlar-relevant categories: signage",
+                    "source_url": "https://graphics.averydennison.com/",
+                }
+            ],
+        )
+    )
+    fake = Contact(company_id=avery.id, full_name="Jordan Reed", title="VP Product",
+                   provider="mock", confidence=0.0)
+    real = Contact(company_id=avery.id, full_name="Dana Whitfield", title="VP Product",
+                   provider="public_web", confidence=0.7)
+    ctx.session.add(fake)
+    ctx.session.add(real)
+    ctx.session.commit()
+
+    drafts = await draft_outreach.run(ctx, [fake, real])
+
+    recipients = {d.contact_id for d in drafts}
+    assert real.id in recipients
+    assert fake.id not in recipients
+    assert any("placeholder contact" in (e.message or "") for e in ctx.errors)
+    assert ctx.session.exec(select(OutreachDraft)).all()

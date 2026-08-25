@@ -469,6 +469,26 @@ export default function Dashboard() {
                 </span>
               </label>
 
+              <a
+                href={api.leadsCsvUrl({
+                  tier: tiers.length ? tiers : undefined,
+                  min_score: minScore || undefined,
+                })}
+                title="Export the current tier and score filters as CSV"
+                style={{
+                  padding: "4px 10px",
+                  fontSize: 11.5,
+                  borderRadius: 5,
+                  border: "1px solid var(--c-hairline)",
+                  background: "var(--c-raised)",
+                  color: "var(--c-t1)",
+                  textDecoration: "none",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Export CSV
+              </a>
+
               <div className="flex flex-wrap gap-1">
                 {TIER_FILTERS.map((filter) => {
                   const active = tiers.includes(filter.value);

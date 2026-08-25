@@ -38,11 +38,23 @@ SUBPAGE_PATHS = ["/about", "/about-us", "/company", "/products", "/our-company"]
 
 # Nav words worth following, most informative first.
 SUBPAGE_KEYWORDS = (
-    "about", "company", "product", "solution", "material", "film",
-    "technology", "quality", "who we are", "overview",
+    # Identity
+    "about", "company", "who we are", "overview",
+    # What they sell -- drives product/application fit
+    "product", "solution", "material", "film", "media", "application", "industries",
+    # Where the durability claims live -- drives pain-point alignment. Without
+    # these the scorer sees a homepage's marketing copy and nothing about UV,
+    # weathering or warranty, which is why that component read zero almost
+    # everywhere before.
+    "durability", "performance", "warranty", "technical", "spec", "data sheet",
+    "resources", "technology", "quality",
 )
-MAX_SUBPAGES = 3
-SITE_TEXT_CAP = 14_000
+MAX_SUBPAGES = 5
+# Generous on purpose: this text is keyword-scanned by the scorer, which is
+# nearly free. The LLM only ever sees the first 12k, so a larger cap costs
+# nothing in tokens. At 14k the median company was truncated exactly at the cap
+# -- we were discarding the evidence we had already paid to fetch.
+SITE_TEXT_CAP = 45_000
 
 # A money figure only counts as revenue when a revenue word sits beside it.
 # Without the proximity requirement this happily reads "$2 billion market" or a

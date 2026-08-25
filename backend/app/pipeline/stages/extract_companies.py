@@ -321,16 +321,19 @@ async def link_companies_to_events(
     for event in events:
         terms = _match_terms(event, EVENT_ALIASES.get(event.slug, []))
         for company in companies:
-            if event.id in (company.event_ids or []) or not company.site_text:
+            if event.id in (company.event_ids or []):
                 continue
-            hit = next((term for term in terms if term in company.site_text.lower()), None)
+            haystack = _company_haystack(company)
+            if not haystack:
+                continue
+            hit = next((term for term in terms if term in haystack), None)
             if not hit:
                 continue
             _attach(
                 company,
                 event,
                 url=company.website or event.url,
-                title=f"{company.name} website mentions {event.name}",
+                title=f"{company.name} is associated with {event.name}",
             )
             linked += 1
 
@@ -373,6 +376,21 @@ def _attach(company: Company, event: Event, *, url: str, title: str) -> None:
         company.sources,
         [SourceRef(url=url, title=title).model_dump(mode="json")],
     )
+
+
+def _company_haystack(company: Company) -> str:
+    """Everything first-party we hold about a company, lowercased.
+
+    The site text is the strongest signal, but the search snippets we already
+    stored as sources often carry "exhibiting at ..." lines that the homepage
+    does not -- and re-reading them costs nothing.
+    """
+    parts = [company.site_text or ""]
+    for source in company.sources or []:
+        if isinstance(source, dict):
+            parts.append(source.get("snippet") or "")
+            parts.append(source.get("title") or "")
+    return " ".join(parts).lower()
 
 
 def _match_terms(event: Event, aliases: list[str]) -> list[str]:

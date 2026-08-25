@@ -56,6 +56,15 @@ export const api = {
     return request<Lead[]>(`/api/leads${qs ? `?${qs}` : ""}`);
   },
 
+  /** Absolute URL so the browser downloads straight from the API origin. */
+  leadsCsvUrl: (filters: LeadFilters = {}) => {
+    const params = new URLSearchParams();
+    filters.tier?.forEach((t) => params.append("tier", t));
+    if (filters.min_score) params.set("min_score", String(filters.min_score));
+    const qs = params.toString();
+    return `${BASE}/api/leads.csv${qs ? `?${qs}` : ""}`;
+  },
+
   startRun: (mode: string, limit?: number) =>
     request<RunOut>("/api/pipeline/run", {
       method: "POST",
