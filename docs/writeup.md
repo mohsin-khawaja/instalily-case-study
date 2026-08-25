@@ -123,10 +123,11 @@ template built from the same evidence, labelled as such in the UI.
 
 ## 4. Implementation results
 
-Pipeline runs end to end in both modes, and a cached replay reproduces a live run exactly — same 54 companies, same 47 enrichments, same 13 handled errors — in 2.4 seconds against roughly fifteen minutes live. **87 tests, no network**, covering scoring
-bands and tier boundaries, deduplication, LLM-output repair and failure,
-cache/retry behaviour, provider fallback, outreach validation, and the resilience
-guarantee — a stage that raises does not lose prior work, and later stages still run.
+Pipeline runs end to end in both modes, and a cached replay reproduces a live run exactly — same companies, same enrichments, same handled errors — in seconds against minutes live. A full live run with Anthropic, Serper and Apollo configured sources **98 companies**, enriches **91** from their own sites, qualifies **6** as tier A/B, and produces **11 named decision-makers** with LinkedIn URLs and **11 drafted emails** — in **6.2 minutes for $0.59**, or **$0.10 per qualified lead**.
+
+Making it fast was measured, not assumed. The same corpus took 29.7 minutes and 185 LLM calls before enrichment and qualification were parallelised and reasoning-model rationales were gated to qualified tiers: **4.8x faster on 42% fewer calls**, with identical lead output.
+
+**128 tests, no network**, covering scoring bands and tier boundaries, deduplication, LLM-output repair and failure, cache/retry behaviour, provider fallback and rate-limit circuit breaking, outreach validation, and the resilience guarantee — a stage that raises does not lose prior work, and later stages still run.
 
 The dashboard shows summary metrics, live stage progress, filters by event / tier /
 score / text, a lead table, and a detail panel with the score breakdown, rationale,

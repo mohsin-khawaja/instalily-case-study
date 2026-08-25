@@ -231,6 +231,24 @@ data, not silence.
 
 ---
 
+## Measured results
+
+A full live run with Anthropic, Serper and Apollo configured:
+
+| | Value |
+|---|---|
+| Companies sourced / enriched | 98 / 91 |
+| Qualified leads (tier A/B) | 6 |
+| Named decision-makers, with LinkedIn URLs | 11 |
+| Outreach drafts (LLM-written, evidence-validated) | 11 |
+| Wall clock | 6.2 min |
+| LLM calls / estimated cost | 108 / $0.59 |
+| **Cost per qualified lead** | **$0.098** |
+
+The same corpus took **29.7 minutes and 185 LLM calls** before enrichment and
+qualification were parallelised and reasoning-model rationales were gated to
+qualified tiers — 4.8x faster on 42% fewer calls, with identical lead output.
+
 ## Performance and unit economics
 
 Enrichment is almost entirely network wait — four or five fetches plus an LLM call

@@ -1,6 +1,5 @@
 {
   "url": "https://sostron.com/",
-  "status_code": 404,
-  "fetched_at": "2026-08-25T09:13:32.763628+00:00",
-  "error": "HTTP 404"
+  "status_code": 200,
+  "fetched_at": "2026-08-25T09:31:54.079684+00:00"
 }
