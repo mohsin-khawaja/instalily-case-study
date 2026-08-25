@@ -261,3 +261,61 @@ async def test_run_leaves_a_self_contained_database_file(tmp_path, monkeypatch):
     wal = tmp_path / "leads.db-wal"
     assert db_path.stat().st_size > 4096  # more than an empty header page
     assert not wal.exists() or wal.stat().st_size == 0
+
+
+async def test_enrichment_runs_companies_concurrently(ctx, tmp_path, monkeypatch):
+    """Bounded parallelism: many companies in flight, never more than the cap."""
+    import asyncio as _asyncio
+
+    monkeypatch.setenv("PIPELINE_CONCURRENCY", "4")
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+
+    companies = [
+        Company(name=f"Co {i}", canonical_name=f"co {i}", website=f"https://c{i}.test/",
+                domain=f"c{i}.test")
+        for i in range(12)
+    ]
+    for company in companies:
+        ctx.session.add(company)
+    ctx.session.commit()
+
+    in_flight = 0
+    peak = 0
+
+    async def fake_enrich(_ctx, company):
+        nonlocal in_flight, peak
+        in_flight += 1
+        peak = max(peak, in_flight)
+        # A real yield point. The suite's autouse fixture replaces asyncio.sleep
+        # with an instant coroutine, which never returns to the event loop, so
+        # sleep(0) would not let a sibling task start.
+        loop = _asyncio.get_running_loop()
+        waiter = loop.create_future()
+        loop.call_soon(waiter.set_result, None)
+        await waiter
+        in_flight -= 1
+        company.enriched = True
+        return company
+
+    monkeypatch.setattr(enrich_companies, "_enrich_one", fake_enrich)
+    monkeypatch.setattr(enrich_companies, "_fill_missing_size", _noop_async)
+    monkeypatch.setattr(
+        "app.pipeline.stages.extract_companies.link_companies_to_events", _noop_links
+    )
+
+    await enrich_companies.run(ctx, companies)
+    get_settings.cache_clear()
+
+    assert all(c.enriched for c in companies)
+    assert peak > 1, "enrichment ran sequentially"
+    assert peak <= 4, f"exceeded the concurrency cap: {peak}"
+
+
+async def _noop_async(_ctx, _companies):
+    return None
+
+
+async def _noop_links(_ctx, _companies, _events):
+    return 0

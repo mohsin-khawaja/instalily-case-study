@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 
 import httpx
+from pydantic import BaseModel
 
 from ...config import get_settings
 from ...models.domain import Company, Contact, SourceRef
@@ -29,6 +30,7 @@ from .base import classify_seniority, sales_navigator_url, title_relevance
 logger = logging.getLogger(__name__)
 
 SEARCH_URL = "https://api.apollo.io/api/v1/mixed_people/search"
+ORG_ENRICH_URL = "https://api.apollo.io/api/v1/organizations/enrich"
 TIMEOUT_S = 30.0
 
 
@@ -70,11 +72,20 @@ class ApolloProvider:
                 response.raise_for_status()
                 people = response.json().get("people", [])
         except httpx.HTTPStatusError as exc:
-            # 401/403 = bad key, 422 = bad filter, 429 = out of credits. All are
-            # worth seeing in the error log rather than silently returning none.
-            logger.warning(
-                "apollo search failed for %s: HTTP %s", company.name, exc.response.status_code
-            )
+            # 403 on this endpoint is usually the Free plan, not a bad key --
+            # Apollo gates people search behind paid tiers while leaving
+            # organization enrichment open. Say so, so nobody re-checks the key.
+            if exc.response.status_code == 403:
+                logger.warning(
+                    "apollo people search is not available on this plan (403). "
+                    "Organization enrichment still works; contacts will fall "
+                    "through to the next provider in CONTACT_PROVIDERS."
+                )
+            else:
+                logger.warning(
+                    "apollo search failed for %s: HTTP %s",
+                    company.name, exc.response.status_code,
+                )
             return []
         except (httpx.HTTPError, ValueError) as exc:
             logger.warning("apollo search failed for %s: %s", company.name, exc)
@@ -123,3 +134,75 @@ class ApolloProvider:
                 ).model_dump(mode="json")
             ],
         )
+
+
+# ---------------------------------------------------------------------------
+# Organization enrichment
+# ---------------------------------------------------------------------------
+#
+# Unlike people search, `organizations/enrich` is available on Apollo's free
+# tier, and it answers the question the scorer most often cannot: how big is
+# this company. Most private manufacturers never publish revenue on their own
+# site, so without a firmographics source the size component scores zero across
+# the board and nothing reaches tier A.
+
+
+class ApolloOrganization(BaseModel):
+    """The subset of Apollo's organization record this pipeline uses."""
+
+    apollo_id: str | None = None
+    name: str | None = None
+    revenue_usd: float | None = None
+    employee_count: int | None = None
+    industry: str | None = None
+    keywords: list[str] = []
+    description: str | None = None
+    hq_location: str | None = None
+    linkedin_url: str | None = None
+
+    @property
+    def source_url(self) -> str | None:
+        """A citable record. Auth-gated, but real and checkable by a rep."""
+        if self.apollo_id:
+            return f"https://app.apollo.io/#/organizations/{self.apollo_id}"
+        return self.linkedin_url
+
+
+async def enrich_organization(domain: str, api_key: str | None = None) -> ApolloOrganization | None:
+    """Look up firmographics for a domain. None on any failure -- never raises."""
+    key = api_key or get_settings().apollo_api_key
+    if not (key and domain):
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT_S) as client:
+            response = await client.get(
+                ORG_ENRICH_URL, headers={"x-api-key": key}, params={"domain": domain}
+            )
+            response.raise_for_status()
+            org = response.json().get("organization")
+    except (httpx.HTTPError, ValueError) as exc:
+        logger.info("apollo org enrich failed for %s: %s", domain, exc)
+        return None
+    if not org:
+        return None
+
+    city, country = org.get("city"), org.get("country")
+    return ApolloOrganization(
+        apollo_id=org.get("id"),
+        name=org.get("name"),
+        revenue_usd=_positive(org.get("annual_revenue")),
+        employee_count=_positive(org.get("estimated_num_employees")),
+        industry=org.get("industry"),
+        keywords=[k for k in (org.get("keywords") or []) if isinstance(k, str)][:12],
+        description=(org.get("short_description") or None),
+        hq_location=", ".join(p for p in (city, country) if p) or None,
+        linkedin_url=org.get("linkedin_url"),
+    )
+
+
+def _positive(value) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None

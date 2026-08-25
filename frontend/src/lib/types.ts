@@ -106,6 +106,9 @@ export interface Summary {
   last_run_at?: string | null;
   last_run_id?: string | null;
   last_run_mode?: string | null;
+  llm_calls: number;
+  llm_estimated_usd: number;
+  cost_per_qualified_lead?: number | null;
   llm_enabled: boolean;
   search_provider: string;
   contact_providers: string[];

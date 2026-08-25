@@ -258,10 +258,138 @@ async def test_apollo_surfaces_a_rate_limit_as_no_results_not_a_crash(monkeypatc
 def test_apollo_joins_the_chain_when_configured(cache, monkeypatch):
     monkeypatch.setenv("APOLLO_API_KEY", "k")
     get_settings.cache_clear()
-    try:
-        chain = build_contact_chain(
-            Fetcher(cache=cache), None, names=["apollo", "clay", "public_web"]
+    chain = build_contact_chain(
+        Fetcher(cache=cache), None, names=["apollo", "clay", "public_web"]
+    )
+    assert [p.name for p in chain] == ["apollo", "public_web"]
+
+
+async def test_apollo_free_plan_403_is_explained_not_retried(monkeypatch, avery, caplog):
+    """A 403 here means the plan, not the key. The log has to say so."""
+    from app.integrations.contacts import apollo
+
+    def handler(request):
+        return httpx.Response(
+            403,
+            json={"error": "not included in your Free plan", "error_code": "API_INACCESSIBLE"},
         )
-        assert [p.name for p in chain] == ["apollo", "public_web"]
-    finally:
-        get_settings.cache_clear()
+
+    monkeypatch.setattr(apollo.httpx, "AsyncClient", lambda **kw: _apollo_client(handler))
+    with caplog.at_level("WARNING"):
+        assert await apollo.ApolloProvider(api_key="k").find_contacts(
+            avery, icp.TARGET_TITLES
+        ) == []
+    assert "not available on this plan" in caplog.text
+
+
+async def test_apollo_org_enrich_maps_firmographics(monkeypatch):
+    from app.integrations.contacts import apollo
+
+    def handler(request):
+        assert request.url.params["domain"] == "drytac.com"
+        return httpx.Response(200, json={"organization": {
+            "id": "abc123", "name": "Drytac", "annual_revenue": 40000000.0,
+            "estimated_num_employees": 64, "industry": "chemicals",
+            "keywords": ["pressure sensitive adhesives", "laminates", 7],
+            "short_description": "Adhesive-coated products.",
+            "city": "Brampton", "country": "Canada",
+            "linkedin_url": "http://www.linkedin.com/company/drytac",
+        }})
+
+    monkeypatch.setattr(apollo.httpx, "AsyncClient", lambda **kw: _apollo_client(handler))
+    org = await apollo.enrich_organization("drytac.com", api_key="k")
+    assert org.revenue_usd == 40000000.0
+    assert org.employee_count == 64
+    assert org.hq_location == "Brampton, Canada"
+    assert org.keywords == ["pressure sensitive adhesives", "laminates"]  # non-strings dropped
+    assert org.source_url == "https://app.apollo.io/#/organizations/abc123"
+
+
+async def test_apollo_org_enrich_rejects_zero_and_missing_values(monkeypatch):
+    from app.integrations.contacts import apollo
+
+    def handler(request):
+        return httpx.Response(200, json={"organization": {
+            "id": "x", "annual_revenue": 0, "estimated_num_employees": None,
+        }})
+
+    monkeypatch.setattr(apollo.httpx, "AsyncClient", lambda **kw: _apollo_client(handler))
+    org = await apollo.enrich_organization("x.com", api_key="k")
+    assert org.revenue_usd is None and org.employee_count is None
+
+
+async def test_apollo_org_enrich_returns_none_without_a_key():
+    from app.integrations.contacts.apollo import enrich_organization
+
+    assert await enrich_organization("drytac.com", api_key=None) is None
+
+
+# --- LinkedIn search contact discovery ------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("full", "expected"),
+    [
+        ("Avery Dennison Graphics Solutions", "Avery Dennison"),
+        ("ORAFOL Europe", "ORAFOL"),
+        ("General Formulations", "General Formulations"),
+        ("Drytac", "Drytac"),
+    ],
+)
+def test_short_name_keeps_the_brand(full, expected):
+    from app.integrations.contacts.public_web import _short_name
+
+    assert _short_name(full) == expected
+
+
+def test_stale_roles_are_rejected():
+    from app.integrations.contacts.public_web import _is_stale_role
+
+    assert _is_stale_role("Retired VP of Operations") is True
+    assert _is_stale_role("Former Director of R&D") is True
+    assert _is_stale_role("Director of Product Development") is False
+
+
+class _FakeSearch:
+    name = "fake"
+
+    def __init__(self, results):
+        self._results = results
+
+    def is_configured(self) -> bool:
+        return True
+
+    async def search(self, query, *, limit=10):
+        return self._results
+
+
+async def test_linkedin_search_keeps_decision_makers_and_drops_noise(cache, avery):
+    from app.integrations.contacts.public_web import PublicWebContactProvider
+    from app.services.search.base import SearchResult
+
+    results = [
+        SearchResult(url="https://www.linkedin.com/in/bruce-lessard-1",
+                     title="Bruce Lessard - Director of Global Product Management",
+                     snippet="Avery Dennison"),
+        SearchResult(url="https://www.linkedin.com/in/retiree-2",
+                     title="Pat Vanderweide - Retired VP of Operations",
+                     snippet="Avery Dennison"),
+        SearchResult(url="https://www.linkedin.com/jobs/view/director-somewhere",
+                     title="Director, Product Development", snippet="Avery Dennison"),
+        SearchResult(url="https://www.linkedin.com/in/other-co-3",
+                     title="Sam Rivera - Director of Sales", snippet="A different company"),
+    ]
+
+    def handler(request):
+        return httpx.Response(404)
+
+    client = _REAL_ASYNC_CLIENT(transport=httpx.MockTransport(handler), follow_redirects=True)
+    async with Fetcher(live=True, cache=cache, client=client) as fetcher:
+        provider = PublicWebContactProvider(fetcher, _FakeSearch(results))
+        contacts = await provider.find_contacts(avery, icp.TARGET_TITLES, limit=3)
+
+    names = [c.full_name for c in contacts]
+    assert "Bruce Lessard" in names          # real decision-maker
+    assert "Pat Vanderweide" not in names    # retired
+    assert not any("jobs" in (c.linkedin_url or "") for c in contacts)  # job posting
+    assert "Sam Rivera" not in names         # different company

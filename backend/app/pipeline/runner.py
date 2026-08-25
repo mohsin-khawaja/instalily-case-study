@@ -100,7 +100,7 @@ class PipelineRunner:
                 )
                 await self._execute(ctx, run_row)
 
-            run_row.counts = dict(ctx.counts)
+            run_row.counts = {**ctx.counts, **ctx.llm.usage.as_dict()}
             run_row.error_count = len(ctx.errors)
             run_row.finished_at = datetime.now(UTC)
             run_row.status = RunStatus.PARTIAL if ctx.errors else RunStatus.COMPLETED
@@ -155,7 +155,7 @@ class PipelineRunner:
         states[stage.value] = state
         run_row.stage_states = states
         run_row.current_stage = stage if state == "running" else run_row.current_stage
-        run_row.counts = dict(ctx.counts)
+        run_row.counts = {**ctx.counts, **ctx.llm.usage.as_dict()}
         run_row.error_count = len(ctx.errors)
         ctx.session.add(run_row)
         ctx.session.commit()

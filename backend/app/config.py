@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     # Pipeline / HTTP
     pipeline_mode: str = "cached"
     http_concurrency: int = 8
+    # How many companies are enriched at once. The fetcher still enforces its own
+    # global cap and a per-host delay underneath, so raising this parallelises
+    # across *different* hosts without ever hammering one of them.
+    pipeline_concurrency: int = 6
     http_timeout_s: float = 20.0
     http_per_host_delay_s: float = 1.0
     user_agent: str = (

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass, field
 from typing import TypeVar
 
 from pydantic import BaseModel, ValidationError
@@ -21,6 +22,52 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
 
 MAX_TOKENS = 4096
+
+# USD per million tokens, input / output. Used only to put a number on a run --
+# billing is Anthropic's. Update alongside any model change.
+MODEL_PRICING: dict[str, tuple[float, float]] = {
+    "claude-sonnet-5": (3.00, 15.00),
+    "claude-haiku-4-5": (1.00, 5.00),
+    "claude-opus-5": (5.00, 25.00),
+}
+
+
+@dataclass
+class Usage:
+    """Token and cost accounting for one run."""
+
+    calls: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    by_model: dict[str, dict[str, int]] = field(default_factory=dict)
+
+    def record(self, model: str, input_tokens: int, output_tokens: int) -> None:
+        self.calls += 1
+        self.input_tokens += input_tokens
+        self.output_tokens += output_tokens
+        bucket = self.by_model.setdefault(
+            model, {"calls": 0, "input_tokens": 0, "output_tokens": 0}
+        )
+        bucket["calls"] += 1
+        bucket["input_tokens"] += input_tokens
+        bucket["output_tokens"] += output_tokens
+
+    @property
+    def estimated_usd(self) -> float:
+        total = 0.0
+        for model, bucket in self.by_model.items():
+            price_in, price_out = MODEL_PRICING.get(model, (0.0, 0.0))
+            total += bucket["input_tokens"] / 1_000_000 * price_in
+            total += bucket["output_tokens"] / 1_000_000 * price_out
+        return round(total, 4)
+
+    def as_dict(self) -> dict:
+        return {
+            "llm_calls": self.calls,
+            "llm_input_tokens": self.input_tokens,
+            "llm_output_tokens": self.output_tokens,
+            "llm_estimated_usd": self.estimated_usd,
+        }
 
 
 class LLMUnavailable(RuntimeError):
@@ -41,7 +88,11 @@ class LLMClient:
         self.model_reasoning = settings.llm_model_reasoning
         self.model_extraction = settings.llm_model_extraction
         self._client = None
-        self.calls = 0
+        self.usage = Usage()
+
+    @property
+    def calls(self) -> int:
+        return self.usage.calls
 
     @property
     def enabled(self) -> bool:
@@ -64,13 +115,18 @@ class LLMClient:
     def _complete_json(self, *, model: str, system: str, prompt: str, schema: dict) -> str:
         """One API call constrained to `schema`. Overridden in tests."""
         client = self._anthropic()
-        self.calls += 1
         response = client.messages.create(
             model=model,
             max_tokens=MAX_TOKENS,
             system=system,
             messages=[{"role": "user", "content": prompt}],
             output_config={"format": {"type": "json_schema", "schema": schema}},
+        )
+        usage = getattr(response, "usage", None)
+        self.usage.record(
+            model,
+            getattr(usage, "input_tokens", 0) or 0,
+            getattr(usage, "output_tokens", 0) or 0,
         )
         return next((b.text for b in response.content if b.type == "text"), "")
 

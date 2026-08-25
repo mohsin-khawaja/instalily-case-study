@@ -70,6 +70,12 @@ def summary(session: Session = Depends(get_session)) -> SummaryOut:
         if last_run
         else 0
     )
+    counts = (last_run.counts or {}) if last_run else {}
+    llm_calls = int(counts.get("llm_calls", 0) or 0)
+    llm_usd = float(counts.get("llm_estimated_usd", 0.0) or 0.0)
+    # The number a GTM team actually budgets against.
+    cost_per_lead = round(llm_usd / qualified, 4) if (qualified and llm_usd) else None
+
     return SummaryOut(
         events=_count(session, Event),
         companies=_count(session, Company),
@@ -83,6 +89,9 @@ def summary(session: Session = Depends(get_session)) -> SummaryOut:
         last_run_at=last_run.finished_at or last_run.started_at if last_run else None,
         last_run_id=last_run.id if last_run else None,
         last_run_mode=last_run.mode.value if last_run else None,
+        llm_calls=llm_calls,
+        llm_estimated_usd=round(llm_usd, 4),
+        cost_per_qualified_lead=cost_per_lead,
         llm_enabled=settings.llm_enabled,
         search_provider=settings.search_provider,
         contact_providers=settings.contact_provider_chain,

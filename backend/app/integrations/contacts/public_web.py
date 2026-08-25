@@ -13,6 +13,7 @@ import re
 from urllib.parse import urlparse
 
 from ...models.domain import Company, Contact, SourceRef
+from ...models.enums import Seniority
 from ...services.extract import extract_links, html_to_text
 from ...services.http import Fetcher
 from ...services.search.base import SearchProvider
@@ -24,6 +25,20 @@ TEAM_PATHS = ["/about/leadership", "/leadership", "/about/team", "/team", "/our-
               "/about-us/leadership", "/management", "/about/management"]
 TEAM_KEYWORDS = ("leadership", "management", "our team", "executive", "who we are",
                  "meet the team", "our people", "board")
+
+# Headline words that actually appear on LinkedIn profiles, unlike full ICP titles.
+SENIORITY_QUERY_TOKENS = ("Director", "Vice President", "Head of", "VP")
+# Words that end the brand portion of a company name.
+_NAME_TAIL_WORDS = {"graphics", "solutions", "group", "corporation", "corp", "inc",
+                    "llc", "ltd", "limited", "company", "co", "gmbh", "international",
+                    "north", "america", "usa", "europe", "products", "systems"}
+_SENIORITY_WEIGHT = {
+    Seniority.C_LEVEL: 0.5,
+    Seniority.VP: 0.6,
+    Seniority.DIRECTOR: 0.5,
+    Seniority.MANAGER: 0.2,
+    Seniority.OTHER: 0.0,
+}
 
 # "Jane Q. Smith, Vice President of Product" / "Jane Smith - Director of R&D"
 _PERSON_TITLE = re.compile(
@@ -122,44 +137,97 @@ class PublicWebContactProvider:
     async def _from_search(
         self, company: Company, target_titles: list[str], limit: int
     ) -> list[Contact]:
+        """Find decision-makers through site-restricted LinkedIn search.
+
+        Querying the full target title verbatim ("VP Product Development") almost
+        never matches a real profile headline, so the queries use seniority words
+        instead and the ICP titles are applied afterwards as a ranking signal.
+        """
         assert self._search is not None
-        out: list[Contact] = []
-        for target in target_titles[:3]:
-            if len(out) >= limit:
+        short = _short_name(company.name)
+        candidates: list[tuple[float, Contact]] = []
+        seen: set[str] = set()
+
+        for token in SENIORITY_QUERY_TOKENS:
+            if len(candidates) >= limit * 3:
                 break
-            query = f'site:linkedin.com/in "{company.name}" "{target}"'
+            query = f'site:linkedin.com/in "{short}" "{token}"'
             try:
-                results = await self._search.search(query, limit=4)
+                results = await self._search.search(query, limit=6)
             except Exception as exc:  # noqa: BLE001
                 logger.info("contact search failed for %s: %s", company.name, exc)
                 continue
+
             for result in results:
                 match = _LINKEDIN_PROFILE.search(result.url)
-                if not match:
+                if not match or match.group(0) in seen:
                     continue
-                name, title = _split_linkedin_title(result.title)
-                if not name:
+                if not _mentions_company(result, short):
                     continue
-                out.append(
-                    Contact(
-                        company_id=company.id,
-                        full_name=name,
-                        title=title or target,
-                        seniority=classify_seniority(title or target),
-                        linkedin_url=match.group(0),
-                        sales_nav_url=sales_navigator_url(name, company.name),
-                        provider=self.name,
-                        confidence=0.55,  # search-snippet sourced: weaker than a site page
-                        sources=[
-                            SourceRef(url=result.url, title=result.title,
-                                      snippet=result.snippet[:300] or None).model_dump(
-                                          mode="json")
-                        ],
+                name, role = _split_linkedin_title(result.title)
+                if not name or _is_stale_role(role):
+                    continue
+
+                relevance = title_relevance(role, target_titles)
+                seniority = classify_seniority(role)
+                if seniority is Seniority.OTHER and relevance < 0.34:
+                    continue  # not a decision-maker by either measure
+
+                seen.add(match.group(0))
+                candidates.append(
+                    (
+                        relevance + _SENIORITY_WEIGHT.get(seniority, 0.0),
+                        Contact(
+                            company_id=company.id,
+                            full_name=name,
+                            title=role,
+                            seniority=seniority,
+                            linkedin_url=match.group(0),
+                            sales_nav_url=sales_navigator_url(name, company.name),
+                            provider=self.name,
+                            # Search-snippet sourced: weaker than a company's own
+                            # leadership page, strong enough for a rep to verify.
+                            confidence=round(min(0.8, 0.5 + relevance / 4), 2),
+                            sources=[
+                                SourceRef(
+                                    url=result.url, title=result.title,
+                                    snippet=result.snippet[:300] or None,
+                                ).model_dump(mode="json")
+                            ],
+                        ),
                     )
                 )
-                if len(out) >= limit:
-                    break
-        return out
+
+        candidates.sort(key=lambda pair: pair[0], reverse=True)
+        return [contact for _score, contact in candidates[:limit]]
+
+
+def _short_name(name: str) -> str:
+    """"Avery Dennison Graphics Solutions" -> "Avery Dennison".
+
+    Search engines match the brand, not the divisional long form, and a profile
+    headline says "at Avery Dennison".
+    """
+    tokens = [t for t in re.split(r"[\s,]+", name) if t]
+    trimmed: list[str] = []
+    for token in tokens:
+        if token.lower() in _NAME_TAIL_WORDS and trimmed:
+            break
+        trimmed.append(token)
+        if len(trimmed) == 2:
+            break
+    return " ".join(trimmed) or name
+
+
+def _mentions_company(result, short_name: str) -> bool:
+    """Guard against a profile that merely ranks for the query."""
+    haystack = f"{result.title} {result.snippet}".lower()
+    return short_name.lower() in haystack
+
+
+def _is_stale_role(role: str | None) -> bool:
+    text = (role or "").lower()
+    return any(word in text for word in ("retired", "former", "ex-", "seeking", "student"))
 
 
 def _split_linkedin_title(title: str) -> tuple[str, str | None]:

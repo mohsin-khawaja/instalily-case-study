@@ -11,12 +11,14 @@ company confidence rather than earning it a fabricated band.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field
 
+from ...config import get_settings
 from ...models.domain import Company, SourceRef, utcnow
 from ...models.enums import RecordStatus, StageName
 from ...scoring import icp
@@ -80,13 +82,24 @@ class ExtractedProfile(BaseModel):
 
 async def run(ctx: RunContext, companies: list[Company]) -> list[Company]:
     targets = companies[: ctx.limit] if ctx.limit else companies
+
+    # Enrichment is almost entirely network wait: four or five fetches plus an
+    # LLM call per company, each against a different host. Running it one company
+    # at a time left the fetcher's own concurrency cap idle and made a live run
+    # scale linearly with the company count.
+    semaphore = asyncio.Semaphore(get_settings().pipeline_concurrency)
+
+    async def enrich_guarded(company: Company) -> None:
+        async with semaphore:
+            await ctx.attempt(
+                STAGE,
+                lambda c=company: _enrich_one(ctx, c),
+                entity_type="company",
+                entity_ref=company.name,
+            )
+
+    await asyncio.gather(*(enrich_guarded(company) for company in targets))
     for company in targets:
-        await ctx.attempt(
-            STAGE,
-            lambda c=company: _enrich_one(ctx, c),
-            entity_type="company",
-            entity_ref=company.name,
-        )
         ctx.session.add(company)
     ctx.session.commit()
 
@@ -112,11 +125,19 @@ async def _fill_missing_size(ctx: RunContext, companies: list[Company]) -> None:
     a company's own page, so a number found here still has to survive the same
     plausibility bounds -- and if nothing is found, the field stays null.
     """
-    if not ctx.search.is_configured():
-        return
-    for company in companies:
+    semaphore = asyncio.Semaphore(get_settings().pipeline_concurrency)
+
+    async def fill_one(company: Company) -> None:
         if company.revenue_est_usd or company.employee_count_est or not company.enriched:
-            continue
+            return
+
+        # Firmographics provider first: a structured record beats parsing a
+        # number out of a search snippet, and it fills industry and HQ too.
+        if await _apply_apollo_firmographics(ctx, company):
+            return
+
+        if not ctx.search.is_configured():
+            return
         results = await ctx.attempt(
             STAGE,
             lambda c=company: ctx.search.search(
@@ -129,11 +150,11 @@ async def _fill_missing_size(ctx: RunContext, companies: list[Company]) -> None:
         matched = [r for r in results if _refers_to(company, r)]
         blob = " ".join(f"{r.title} {r.snippet}" for r in matched)
         if not blob:
-            continue
+            return
         revenue = _revenue_from_text(blob)
         headcount = _employees_from_text(blob)
         if not (revenue or headcount):
-            continue
+            return
         source = SourceRef(
             url=matched[0].url, title=matched[0].title,
             snippet=matched[0].snippet[:300] or None,
@@ -149,7 +170,63 @@ async def _fill_missing_size(ctx: RunContext, companies: list[Company]) -> None:
         company.size_source_kind = "third_party"
         company.sources = [*(company.sources or []), source]
         ctx.session.add(company)
+
+    async def guarded(company: Company) -> None:
+        async with semaphore:
+            await fill_one(company)
+
+    await asyncio.gather(*(guarded(company) for company in companies))
     ctx.session.commit()
+
+
+async def _apply_apollo_firmographics(ctx: RunContext, company: Company) -> bool:
+    """Fill size (and any missing profile fields) from Apollo. True if it did."""
+    from ...integrations.contacts.apollo import enrich_organization
+
+    if not (get_settings().apollo_api_key and company.domain):
+        return False
+
+    org = await ctx.attempt(
+        STAGE,
+        lambda: enrich_organization(company.domain or ""),
+        entity_type="company_firmographics",
+        entity_ref=company.name,
+        default=None,
+    )
+    if org is None or not (org.revenue_usd or org.employee_count):
+        return False
+
+    source_url = org.source_url or company.website
+    if org.revenue_usd:
+        company.revenue_est_usd = org.revenue_usd
+        company.revenue_band = _revenue_band(org.revenue_usd)
+    if org.employee_count:
+        company.employee_count_est = int(org.employee_count)
+        company.employee_band = _employee_band(int(org.employee_count))
+    company.size_source_url = source_url
+    company.size_source_kind = "third_party"
+
+    # Only fill gaps -- the company's own site outranks an aggregator on anything
+    # it already told us.
+    company.hq_location = company.hq_location or org.hq_location
+    company.description = company.description or org.description
+    if org.keywords:
+        existing = {s.lower() for s in (company.sub_industries or [])}
+        company.sub_industries = [
+            *(company.sub_industries or []),
+            *[k for k in org.keywords if k.lower() not in existing],
+        ][:14]
+
+    if source_url:
+        company.sources = [
+            *(company.sources or []),
+            SourceRef(
+                url=source_url,
+                title=f"Apollo.io organization record for {org.name or company.name}",
+            ).model_dump(mode="json"),
+        ]
+    ctx.session.add(company)
+    return True
 
 
 async def _enrich_one(ctx: RunContext, company: Company) -> Company:

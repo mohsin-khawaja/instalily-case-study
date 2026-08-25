@@ -21,6 +21,9 @@ class SummaryOut(BaseModel):
     last_run_at: datetime | None = None
     last_run_id: str | None = None
     last_run_mode: str | None = None
+    llm_calls: int = 0
+    llm_estimated_usd: float = 0.0
+    cost_per_qualified_lead: float | None = None
     llm_enabled: bool = False
     search_provider: str = "duckduckgo"
     contact_providers: list[str] = []

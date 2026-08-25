@@ -45,6 +45,17 @@ cd frontend && npm install && npm run dev
 
 Open <http://localhost:3000>.
 
+**Check your integrations before spending a run on them**
+
+```bash
+cd backend && uv run python -m app.preflight
+```
+
+Makes the smallest real call each configured provider offers, reports what it
+found, never prints a secret, and exits non-zero if anything a run depends on is
+broken. `--strict` also fails on warnings, which makes it usable as a CI smoke
+test.
+
 **Tests and lint**
 
 ```bash

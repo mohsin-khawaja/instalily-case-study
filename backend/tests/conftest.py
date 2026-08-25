@@ -8,6 +8,38 @@ from app.models import errors as _errors  # noqa: F401  (registers run/error tab
 from app.models.domain import Company, Event
 from app.models.enums import EventType
 
+# Credentials that must never leak into a test run: a populated .env would make
+# "unconfigured provider" tests pass for the wrong reason, and could spend real
+# API credits from the suite.
+_CREDENTIAL_VARS = (
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_BASE_URL",
+    "APOLLO_API_KEY",
+    "CLAY_API_KEY",
+    "CLAY_WEBHOOK_URL",
+    "SALES_NAV_TOKEN",
+    "SERPER_API_KEY",
+    "TAVILY_API_KEY",
+)
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_settings(monkeypatch):
+    """Run every test against empty credentials, whatever the developer's .env says.
+
+    Env vars outrank the .env file in pydantic-settings, so blanking them here is
+    enough; the cache is cleared on both sides so no test inherits another's view.
+    """
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    for var in _CREDENTIAL_VARS:
+        monkeypatch.setenv(var, "")
+    monkeypatch.setenv("SEARCH_PROVIDER", "duckduckgo")
+    monkeypatch.setenv("CONTACT_PROVIDERS", "public_web,mock")
+    yield
+    get_settings.cache_clear()
+
 
 @pytest.fixture(autouse=True)
 def _no_real_backoff(monkeypatch):
