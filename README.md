@@ -237,13 +237,13 @@ A full live run with Anthropic, Serper and Apollo configured:
 
 | | Value |
 |---|---|
-| Companies sourced / enriched | 98 / 91 |
-| Qualified leads (tier A/B) | 6 |
-| Named decision-makers, with LinkedIn URLs | 11 |
-| Outreach drafts (LLM-written, evidence-validated) | 11 |
-| Wall clock | 6.2 min |
-| LLM calls / estimated cost | 108 / $0.59 |
-| **Cost per qualified lead** | **$0.098** |
+| Companies sourced / enriched | 94 / 88 |
+| Qualified leads (tier A/B) | 5 |
+| Named decision-makers, with LinkedIn URLs | 9 |
+| Outreach drafts (LLM-written, evidence-validated) | 9 |
+| Wall clock | 5.5 min |
+| LLM calls / estimated cost | 102 / $0.55 |
+| **Cost per qualified lead** | **$0.11** |
 
 The same corpus took **29.7 minutes and 185 LLM calls** before enrichment and
 qualification were parallelised and reasoning-model rationales were gated to

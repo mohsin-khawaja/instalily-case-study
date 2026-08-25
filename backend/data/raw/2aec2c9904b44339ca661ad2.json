@@ -1,6 +1,6 @@
 {
   "url": "https://www.dafgraphicmedia.com/",
   "status_code": 0,
-  "fetched_at": "2026-08-25T09:30:28.133668+00:00",
+  "fetched_at": "2026-08-25T21:03:29.628142+00:00",
   "error": "giving up after 3 attempts (ConnectError: [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:1000))"
 }
