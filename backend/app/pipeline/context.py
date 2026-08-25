@@ -15,6 +15,7 @@ from typing import TypeVar
 
 from sqlmodel import Session
 
+from ..integrations.contacts.apollo import RateLimitBreaker
 from ..models.enums import PipelineMode, StageName
 from ..models.errors import StageError
 from ..services.http import Fetcher, FetchError
@@ -40,6 +41,7 @@ class RunContext:
     limit: int | None = None
     errors: list[StageError] = field(default_factory=list)
     event_hosts: set[str] = field(default_factory=set)
+    apollo_breaker: RateLimitBreaker = field(default_factory=RateLimitBreaker)
     counts: dict[str, int] = field(default_factory=dict)
 
     @property

@@ -273,8 +273,12 @@ function card(s, x, y, w, h, fill = MIST) {
     paraSpaceAfter: 6, margin: 0,
   });
   card(s, M, 5.85, W - M * 2, 1.0, "FDF3E2");
-  s.addText("Runs clean with no API keys at all. Two keys — Anthropic and a search provider — turn keyword fallbacks into model-read enrichment and real search recall.", {
-    x: M + 0.35, y: 6.05, w: W - M * 2 - 0.7, h: 0.6, fontFace: B, fontSize: 13, color: INK, margin: 0,
+  const econ = R.llm_estimated_usd != null && R.cost_per_qualified_lead != null
+    ? `Last run: ${R.llm_calls} LLM calls, $${Number(R.llm_estimated_usd).toFixed(2)} total, ` +
+      `$${Number(R.cost_per_qualified_lead).toFixed(2)} per qualified lead. `
+    : "";
+  s.addText(econ + "Runs clean with no API keys at all; each provider has a deterministic fallback, and `app.preflight` verifies every key before a run spends one.", {
+    x: M + 0.35, y: 6.05, w: W - M * 2 - 0.7, h: 0.7, fontFace: B, fontSize: 12.5, color: INK, margin: 0,
   });
   s.addNotes("Numbers are from the committed cached run, reproducible with one command.");
 }

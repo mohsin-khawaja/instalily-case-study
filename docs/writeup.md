@@ -145,7 +145,42 @@ this system in production, and the reason it was built this way.
 
 ---
 
-## 5. Scaling path
+## 5. Operating it: cost, speed, and knowing the keys work
+
+Three things separate a prototype that demos from one a team could actually run.
+
+**Preflight.** `uv run python -m app.preflight` makes the smallest real call every
+configured provider offers, reports what it found without printing a secret, and
+exits non-zero if a run would break. A live run costs minutes and credits, so
+failing fast on a bad key is worth its own command; `--strict` makes it a CI smoke
+test. It is also how the Apollo finding below surfaced in seconds rather than
+halfway through a run.
+
+**Targeted LLM spend.** Extraction runs on Haiku; only tier A/B leads earn a
+Sonnet rationale. On a wide run most of the corpus is disqualified, and writing
+prose about a company scoring 12/100 spends reasoning tokens on something no rep
+will open — those still get a deterministic rationale from the same breakdown.
+Every run records token usage and estimated cost, and the dashboard turns it into
+**cost per qualified lead**, which is the number a GTM team budgets against.
+Prompt caching is deliberately absent: these system prompts sit well under the
+minimum cacheable prefix, so it would add complexity and cache nothing.
+
+**Bounded concurrency.** Enrichment is almost entirely network wait — four or five
+fetches plus an LLM call per company, each against a different host — so it runs
+several companies at once rather than one at a time, with the fetcher's global cap
+and per-host delay still underneath. Parallelism happens across hosts; no single
+site sees a burst.
+
+**What integrating real providers actually taught us.** Apollo's people-search
+endpoint is gated behind paid plans and returns a 403 on the free tier, while its
+organization endpoint is open — so Apollo became the firmographics source that
+lifted the size component off the floor, and decision-makers come from
+site-restricted LinkedIn search instead. That search only worked once the queries
+stopped asking for verbatim ICP titles ("VP Product Development") and started
+asking for the seniority words that actually appear in profile headlines. Both are
+the kind of thing no amount of design finds; only wiring up the real API does.
+
+## 6. Scaling path
 
 Bounded async throughout — a global concurrency semaphore plus a per-host lock and
 delay. Per-record isolation already exists in every stage, so moving to a task

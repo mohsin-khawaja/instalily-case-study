@@ -181,20 +181,32 @@ async def _fill_missing_size(ctx: RunContext, companies: list[Company]) -> None:
 
 async def _apply_apollo_firmographics(ctx: RunContext, company: Company) -> bool:
     """Fill size (and any missing profile fields) from Apollo. True if it did."""
-    from ...integrations.contacts.apollo import enrich_organization
+    from ...integrations.contacts.apollo import ApolloRateLimited, enrich_organization
 
     if not (get_settings().apollo_api_key and company.domain):
         return False
+    if ctx.apollo_breaker.is_open():
+        return False  # quota exhausted for this run; the search path still runs
 
-    org = await ctx.attempt(
-        STAGE,
-        lambda: enrich_organization(company.domain or ""),
-        entity_type="company_firmographics",
-        entity_ref=company.name,
-        default=None,
-    )
+    try:
+        org = await enrich_organization(company.domain or "")
+    except ApolloRateLimited as exc:
+        if ctx.apollo_breaker.record_rate_limit():
+            ctx.record_error(
+                STAGE, exc,
+                entity_type="company_firmographics",
+                entity_ref="apollo quota exhausted; falling back to search for the rest of the run",
+            )
+        return False
+    except Exception as exc:  # noqa: BLE001 -- degrade to the search path
+        ctx.record_error(
+            STAGE, exc, entity_type="company_firmographics", entity_ref=company.name
+        )
+        return False
+
     if org is None or not (org.revenue_usd or org.employee_count):
         return False
+    ctx.apollo_breaker.record_success()
 
     source_url = org.source_url or company.website
     if org.revenue_usd:

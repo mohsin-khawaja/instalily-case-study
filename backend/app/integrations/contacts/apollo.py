@@ -18,6 +18,7 @@ name is dropped rather than synthesised.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 import httpx
 from pydantic import BaseModel
@@ -39,15 +40,21 @@ class ApolloProvider:
 
     def __init__(self, api_key: str | None = None) -> None:
         self._api_key = api_key or get_settings().apollo_api_key
+        # A plan restriction does not change mid-run. Once people search answers
+        # 403 there is nothing to gain from asking again for every remaining
+        # company, so the provider retires itself and the chain moves on.
+        self._people_search_available = True
 
     def is_configured(self) -> bool:
-        return bool(self._api_key)
+        return bool(self._api_key) and self._people_search_available
 
     async def find_contacts(
         self, company: Company, target_titles: list[str], limit: int = 3
     ) -> list[Contact]:
-        if not self.is_configured():
+        if not self._api_key:
             logger.info("apollo provider not configured; skipping")
+            return []
+        if not self._people_search_available:
             return []
         if not company.domain:
             # Without a domain Apollo matches on company name alone, which is how
@@ -76,11 +83,15 @@ class ApolloProvider:
             # Apollo gates people search behind paid tiers while leaving
             # organization enrichment open. Say so, so nobody re-checks the key.
             if exc.response.status_code == 403:
+                self._people_search_available = False
                 logger.warning(
                     "apollo people search is not available on this plan (403). "
-                    "Organization enrichment still works; contacts will fall "
-                    "through to the next provider in CONTACT_PROVIDERS."
+                    "Organization enrichment still works; contacts fall through "
+                    "to the next provider in CONTACT_PROVIDERS for this run."
                 )
+            elif exc.response.status_code == 429:
+                self._people_search_available = False
+                logger.warning("apollo people search quota exhausted for this run (429)")
             else:
                 logger.warning(
                     "apollo search failed for %s: HTTP %s",
@@ -147,6 +158,39 @@ class ApolloProvider:
 # the board and nothing reaches tier A.
 
 
+class ApolloRateLimited(RuntimeError):
+    """Apollo returned 429. Free-tier quotas are tight and reset slowly."""
+
+
+@dataclass
+class RateLimitBreaker:
+    """Stop calling a provider that has started refusing us.
+
+    A rate-limited free tier does not recover within a run, so retrying every
+    remaining company just adds a round-trip each and delays the fallback that
+    would have worked. After `threshold` consecutive 429s the circuit opens and
+    callers skip straight to the next source.
+    """
+
+    threshold: int = 3
+    consecutive: int = 0
+    opened: bool = False
+
+    def is_open(self) -> bool:
+        return self.opened
+
+    def record_rate_limit(self) -> bool:
+        """Record a 429. Returns True if this opened the circuit."""
+        self.consecutive += 1
+        if self.consecutive >= self.threshold and not self.opened:
+            self.opened = True
+            return True
+        return False
+
+    def record_success(self) -> None:
+        self.consecutive = 0
+
+
 class ApolloOrganization(BaseModel):
     """The subset of Apollo's organization record this pipeline uses."""
 
@@ -180,6 +224,11 @@ async def enrich_organization(domain: str, api_key: str | None = None) -> Apollo
             )
             response.raise_for_status()
             org = response.json().get("organization")
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 429:
+            raise ApolloRateLimited(f"apollo rate limited on {domain}") from exc
+        logger.info("apollo org enrich failed for %s: HTTP %s", domain, exc.response.status_code)
+        return None
     except (httpx.HTTPError, ValueError) as exc:
         logger.info("apollo org enrich failed for %s: %s", domain, exc)
         return None

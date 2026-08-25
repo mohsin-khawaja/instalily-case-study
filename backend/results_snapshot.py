@@ -41,6 +41,23 @@ def main() -> None:
             "outreach_drafts": _count(session, OutreachDraft),
             "errors": _count(session, StageError),
         }
+    # Unit economics from the last run, for the deck and the write-up.
+    with Session(get_engine()) as session:
+        from app.models.errors import PipelineRun
+
+        last = session.exec(
+            select(PipelineRun).order_by(PipelineRun.started_at.desc())
+        ).first()
+        counts = (last.counts or {}) if last else {}
+        data["llm_calls"] = int(counts.get("llm_calls", 0) or 0)
+        data["llm_estimated_usd"] = float(counts.get("llm_estimated_usd", 0.0) or 0.0)
+        qualified = data["qualified_leads"]
+        data["cost_per_qualified_lead"] = (
+            round(data["llm_estimated_usd"] / qualified, 4)
+            if qualified and data["llm_estimated_usd"]
+            else None
+        )
+
     tests = subprocess.run(
         ["uv", "run", "pytest", "-q", "--collect-only"],
         capture_output=True, text=True, cwd=Path(__file__).resolve().parent,

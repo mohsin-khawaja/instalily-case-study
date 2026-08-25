@@ -393,3 +393,80 @@ async def test_linkedin_search_keeps_decision_makers_and_drops_noise(cache, aver
     assert "Pat Vanderweide" not in names    # retired
     assert not any("jobs" in (c.linkedin_url or "") for c in contacts)  # job posting
     assert "Sam Rivera" not in names         # different company
+
+
+# --- Apollo rate limiting -------------------------------------------------
+
+
+async def test_apollo_org_enrich_signals_rate_limiting_distinctly(monkeypatch):
+    from app.integrations.contacts import apollo
+
+    def handler(request):
+        return httpx.Response(429, json={"error": "rate limit"})
+
+    monkeypatch.setattr(apollo.httpx, "AsyncClient", lambda **kw: _apollo_client(handler))
+    with pytest.raises(apollo.ApolloRateLimited):
+        await apollo.enrich_organization("drytac.com", api_key="k")
+
+
+async def test_apollo_org_enrich_swallows_other_http_errors(monkeypatch):
+    from app.integrations.contacts import apollo
+
+    def handler(request):
+        return httpx.Response(404, json={})
+
+    monkeypatch.setattr(apollo.httpx, "AsyncClient", lambda **kw: _apollo_client(handler))
+    assert await apollo.enrich_organization("nope.test", api_key="k") is None
+
+
+def test_breaker_opens_once_and_resets_on_success():
+    from app.integrations.contacts.apollo import RateLimitBreaker
+
+    breaker = RateLimitBreaker(threshold=3)
+    assert breaker.record_rate_limit() is False
+    assert breaker.record_rate_limit() is False
+    assert breaker.record_rate_limit() is True   # opens, and says so exactly once
+    assert breaker.record_rate_limit() is False  # already open: no repeat report
+    assert breaker.is_open() is True
+
+    fresh = RateLimitBreaker(threshold=2)
+    fresh.record_rate_limit()
+    fresh.record_success()
+    assert fresh.consecutive == 0
+    assert fresh.is_open() is False
+
+
+async def test_apollo_people_search_retires_after_a_plan_403(monkeypatch, avery):
+    """A plan restriction is permanent for the run; asking again per company is waste."""
+    from app.integrations.contacts import apollo
+
+    calls = {"n": 0}
+
+    def handler(request):
+        calls["n"] += 1
+        return httpx.Response(403, json={"error_code": "API_INACCESSIBLE"})
+
+    monkeypatch.setattr(apollo.httpx, "AsyncClient", lambda **kw: _apollo_client(handler))
+    provider = apollo.ApolloProvider(api_key="k")
+
+    for _ in range(5):
+        assert await provider.find_contacts(avery, icp.TARGET_TITLES) == []
+
+    assert calls["n"] == 1
+    assert provider.is_configured() is False  # drops out of the chain afterwards
+
+
+async def test_apollo_people_search_retires_on_quota_exhaustion(monkeypatch, avery):
+    from app.integrations.contacts import apollo
+
+    calls = {"n": 0}
+
+    def handler(request):
+        calls["n"] += 1
+        return httpx.Response(429, json={"error": "rate limit"})
+
+    monkeypatch.setattr(apollo.httpx, "AsyncClient", lambda **kw: _apollo_client(handler))
+    provider = apollo.ApolloProvider(api_key="k")
+    for _ in range(3):
+        await provider.find_contacts(avery, icp.TARGET_TITLES)
+    assert calls["n"] == 1

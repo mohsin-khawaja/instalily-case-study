@@ -138,7 +138,36 @@ as a confidence penalty rather than inventing a band. Each of these is visible i
 the error log rather than papered over — which is the behaviour I would want from
 this system in production, and the reason it was built this way.</p>
 <hr />
-<h2>5. Scaling path</h2>
+<h2>5. Operating it: cost, speed, and knowing the keys work</h2>
+<p>Three things separate a prototype that demos from one a team could actually run.</p>
+<p><strong>Preflight.</strong> <code>uv run python -m app.preflight</code> makes the smallest real call every
+configured provider offers, reports what it found without printing a secret, and
+exits non-zero if a run would break. A live run costs minutes and credits, so
+failing fast on a bad key is worth its own command; <code>--strict</code> makes it a CI smoke
+test. It is also how the Apollo finding below surfaced in seconds rather than
+halfway through a run.</p>
+<p><strong>Targeted LLM spend.</strong> Extraction runs on Haiku; only tier A/B leads earn a
+Sonnet rationale. On a wide run most of the corpus is disqualified, and writing
+prose about a company scoring 12/100 spends reasoning tokens on something no rep
+will open — those still get a deterministic rationale from the same breakdown.
+Every run records token usage and estimated cost, and the dashboard turns it into
+<strong>cost per qualified lead</strong>, which is the number a GTM team budgets against.
+Prompt caching is deliberately absent: these system prompts sit well under the
+minimum cacheable prefix, so it would add complexity and cache nothing.</p>
+<p><strong>Bounded concurrency.</strong> Enrichment is almost entirely network wait — four or five
+fetches plus an LLM call per company, each against a different host — so it runs
+several companies at once rather than one at a time, with the fetcher's global cap
+and per-host delay still underneath. Parallelism happens across hosts; no single
+site sees a burst.</p>
+<p><strong>What integrating real providers actually taught us.</strong> Apollo's people-search
+endpoint is gated behind paid plans and returns a 403 on the free tier, while its
+organization endpoint is open — so Apollo became the firmographics source that
+lifted the size component off the floor, and decision-makers come from
+site-restricted LinkedIn search instead. That search only worked once the queries
+stopped asking for verbatim ICP titles ("VP Product Development") and started
+asking for the seniority words that actually appear in profile headlines. Both are
+the kind of thing no amount of design finds; only wiring up the real API does.</p>
+<h2>6. Scaling path</h2>
 <p>Bounded async throughout — a global concurrency semaphore plus a per-host lock and
 delay. Per-record isolation already exists in every stage, so moving to a task
 queue means enqueuing the same coroutines with no stage changes. The ICP is one

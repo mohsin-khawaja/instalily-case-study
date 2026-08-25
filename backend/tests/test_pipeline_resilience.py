@@ -366,3 +366,40 @@ async def test_llm_rationales_are_only_spent_on_qualified_leads(ctx, monkeypatch
     assert by_name[off_icp.id].rationale_source == "deterministic"
     assert by_name[off_icp.id].rationale  # still explained, just not by the LLM
     assert len(asked_for) == 1, f"LLM called {len(asked_for)} times, expected 1"
+
+
+async def test_apollo_quota_exhaustion_stops_calling_and_falls_through(ctx, monkeypatch):
+    """A rate-limited free tier must not cost a round-trip per remaining company."""
+    from app.integrations.contacts.apollo import ApolloRateLimited
+    from app.pipeline.stages import enrich_companies as stage
+
+    monkeypatch.setenv("APOLLO_API_KEY", "k")
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+
+    attempts = {"n": 0}
+
+    async def always_rate_limited(_domain):
+        attempts["n"] += 1
+        raise ApolloRateLimited("429")
+
+    monkeypatch.setattr(
+        "app.integrations.contacts.apollo.enrich_organization", always_rate_limited
+    )
+
+    companies = [
+        Company(name=f"Co {i}", canonical_name=f"co {i}", domain=f"c{i}.test",
+                website=f"https://c{i}.test/", enriched=True)
+        for i in range(10)
+    ]
+    for company in companies:
+        assert await stage._apply_apollo_firmographics(ctx, company) is False
+
+    get_settings.cache_clear()
+    assert ctx.apollo_breaker.is_open()
+    # Three strikes, then the circuit opens and the rest are skipped outright.
+    assert attempts["n"] == 3
+    # The run records the exhaustion once, not ten times.
+    quota_errors = [e for e in ctx.errors if "quota exhausted" in (e.entity_ref or "")]
+    assert len(quota_errors) == 1
