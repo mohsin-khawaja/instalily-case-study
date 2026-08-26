@@ -7,6 +7,7 @@ import {
   type ComponentExplanation,
   type Lead,
   type OutreachOut,
+  type ProspectReport,
 } from "@/lib/types";
 import {
   Button,
@@ -328,6 +329,9 @@ export function LeadDrawer({
             )}
           </section>
 
+          {/* ── Research report ───────────────────────────────────────── */}
+          <ResearchReport companyId={lead.company_id} />
+
           {/* ── Outreach ──────────────────────────────────────────────── */}
           <section>
             <SectionLabel>Outreach</SectionLabel>
@@ -477,6 +481,149 @@ function ComponentRow({
         </div>
       )}
     </li>
+  );
+}
+
+/* On demand, one lead at a time. The dossier itself is free; only "Rewrite as a
+   briefing" spends tokens, which keeps report cost proportional to calls made. */
+function ResearchReport({ companyId }: { companyId: string }) {
+  const [report, setReport] = useState<ProspectReport | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load(enhance: boolean) {
+    setLoading(true);
+    setError(null);
+    try {
+      setReport(await api.report(companyId, enhance));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not build the report");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <section style={{ marginBottom: 24 }}>
+      <SectionLabel>Research report</SectionLabel>
+
+      {!report && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={() => load(false)} disabled={loading}>
+            {loading ? "Building…" : "Build dossier"}
+          </Button>
+          <span style={{ fontSize: 10.5, color: "var(--c-t3)" }}>
+            Assembled from verified evidence — no tokens spent.
+          </span>
+        </div>
+      )}
+
+      {error && (
+        <p style={{ fontSize: 11.5, color: "var(--c-critical)", margin: "6px 0 0" }}>{error}</p>
+      )}
+
+      {report && (
+        <>
+          {report.briefing && (
+            <div
+              style={{
+                border: "1px solid var(--c-hairline)",
+                borderRadius: 6,
+                padding: "10px 12px",
+                marginBottom: 8,
+                background: "var(--c-page)",
+              }}
+            >
+              <p style={{ fontSize: 12.5, lineHeight: 1.6, margin: 0 }}>
+                {report.briefing.positioning}
+              </p>
+              <p style={{ fontSize: 12.5, lineHeight: 1.6, margin: "8px 0 0" }}>
+                {report.briefing.tedlar_angle}
+              </p>
+              <p style={{ fontSize: 11, color: "var(--c-t3)", margin: "8px 0 2px" }}>
+                Talking points
+              </p>
+              <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, lineHeight: 1.6 }}>
+                {report.briefing.talking_points.map((tp) => (
+                  <li key={tp}>{tp}</li>
+                ))}
+              </ul>
+              <p style={{ fontSize: 11, color: "var(--c-t3)", margin: "8px 0 2px" }}>
+                Likely objections
+              </p>
+              <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, lineHeight: 1.6 }}>
+                {report.briefing.objections.map((o) => (
+                  <li key={o}>{o}</li>
+                ))}
+              </ul>
+              <p style={{ fontSize: 12, fontStyle: "italic", margin: "8px 0 0" }}>
+                Opener: “{report.briefing.opener}”
+              </p>
+            </div>
+          )}
+
+          {report.sections.map((section) => (
+            <div
+              key={section.heading}
+              style={{
+                border: "1px solid var(--c-hairline)",
+                borderRadius: 6,
+                padding: "9px 11px",
+                marginBottom: 6,
+                background: "var(--c-page)",
+              }}
+            >
+              <p
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  letterSpacing: 0.5,
+                  textTransform: "uppercase",
+                  color: "var(--c-t3)",
+                  margin: "0 0 4px",
+                }}
+              >
+                {section.heading}
+              </p>
+              <p
+                style={{
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                  margin: 0,
+                  whiteSpace: "pre-wrap",
+                  color: "var(--c-t1)",
+                }}
+              >
+                {section.body}
+              </p>
+              {section.sources.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-2">
+                  {section.sources.map((s) => (
+                    <SourceLink key={s} href={s}>
+                      source
+                    </SourceLink>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Chip tone={report.generator === "llm" ? "info" : "neutral"}>
+              {report.generator === "llm" ? "LLM briefing" : "deterministic dossier"}
+            </Chip>
+            {!report.briefing && (
+              <Button onClick={() => load(true)} disabled={loading}>
+                {loading ? "Writing…" : "Rewrite as a briefing (uses tokens)"}
+              </Button>
+            )}
+            {report.note && (
+              <span style={{ fontSize: 10.5, color: "var(--c-caution)" }}>{report.note}</span>
+            )}
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 

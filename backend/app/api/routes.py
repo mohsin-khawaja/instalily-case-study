@@ -27,7 +27,14 @@ from ..pipeline.stages.draft_outreach import PLACEHOLDER_PROVIDERS
 from ..scoring import icp
 from ..scoring.explain import explain_company, summarise
 from ..scoring.similarity import rank_lookalikes, similar_to
+from ..services.llm import LLMClient
 from ..services.mail import build_eml_bundle, gmail_compose_url
+from ..services.research import (
+    RESEARCH_SYSTEM,
+    ReportOut,
+    deterministic_report,
+    report_prompt,
+)
 from .schemas import (
     ContactOut,
     EventOut,
@@ -294,6 +301,71 @@ def export_outreach_bundle(
             "Content-Disposition": f'attachment; filename="tedlar-outreach-{stamp}.zip"'
         },
     )
+
+
+@router.get("/leads/{company_id}/report")
+async def prospect_report(
+    company_id: str,
+    session: Session = Depends(get_session),
+    enhance: bool = False,
+) -> dict:
+    """A pre-call dossier for one lead.
+
+    Deterministic by default and therefore free. `enhance=true` asks the LLM to
+    rewrite it into a briefing — the only per-lead token spend in the system,
+    deliberately opt-in so a run never triggers it for the whole corpus.
+    """
+    company = session.get(Company, company_id)
+    if company is None:
+        raise HTTPException(status_code=404, detail="company not found")
+
+    qualification = session.exec(
+        select(Qualification).where(Qualification.company_id == company_id)
+    ).first()
+    events = {e.id: e for e in session.exec(select(Event)).all()}
+    contacts = list(
+        session.exec(select(Contact).where(Contact.company_id == company_id)).all()
+    )
+    enriched = [c for c in session.exec(select(Company)).all() if c.enriched]
+    reference_ids = {
+        c.id for c in enriched if (c.domain or "") in icp.REFERENCE_ACCOUNT_DOMAINS
+    }
+    lookalikes = [
+        m.as_dict() for m in rank_lookalikes(enriched, reference_ids).get(company_id, [])
+    ]
+
+    sections = deterministic_report(company, qualification, events, contacts, lookalikes)
+    payload = {
+        "company_id": company_id,
+        "company_name": company.name,
+        "sections": [s.as_dict() for s in sections],
+        "generator": "deterministic",
+        "briefing": None,
+    }
+    if not enhance:
+        return payload
+
+    llm = LLMClient()
+    if not llm.enabled:
+        payload["note"] = "ANTHROPIC_API_KEY is unset; showing the deterministic dossier."
+        return payload
+    try:
+        briefing = await llm.structured(
+            ReportOut,
+            prompt=report_prompt(
+                company, sections, qualification.evidence if qualification else []
+            ),
+            system=RESEARCH_SYSTEM,
+            model=llm.model_reasoning,
+        )
+    except Exception as exc:  # noqa: BLE001 -- degrade to the dossier, never 500
+        payload["note"] = f"LLM unavailable ({type(exc).__name__}); showing the dossier."
+        return payload
+
+    payload["briefing"] = briefing.model_dump()
+    payload["generator"] = "llm"
+    payload["usage"] = llm.usage.as_dict()
+    return payload
 
 
 @router.get("/leads/{company_id}/similar")

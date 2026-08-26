@@ -1,4 +1,12 @@
-import type { Lead, RunOut, StageErrorOut, Summary, EventOut, OutreachOut } from "./types";
+import type {
+  EventOut,
+  Lead,
+  OutreachOut,
+  ProspectReport,
+  RunOut,
+  StageErrorOut,
+  Summary,
+} from "./types";
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
@@ -73,6 +81,12 @@ export const api = {
     const qs = params.toString();
     return `${BASE}/api/outreach.zip${qs ? `?${qs}` : ""}`;
   },
+
+  /** Pre-call dossier. Deterministic and free unless `enhance` is set. */
+  report: (companyId: string, enhance = false) =>
+    request<ProspectReport>(
+      `/api/leads/${companyId}/report${enhance ? "?enhance=true" : ""}`,
+    ),
 
   startRun: (mode: string, limit?: number) =>
     request<RunOut>("/api/pipeline/run", {

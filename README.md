@@ -239,6 +239,46 @@ data, not silence.
 
 ---
 
+## Where this sits in the GTM engineering stack
+
+The canonical GTM engineering motion is: ICP definition → account sourcing →
+**waterfall enrichment** → **signal monitoring** → lead scoring → LLM
+personalisation → sequence and inbox → reporting on which plays produce
+pipeline. This tool implements six of the eight.
+
+| Stage | Here |
+|---|---|
+| ICP definition | `scoring/icp.py` — the ICP as data, not as code |
+| Account sourcing | Three channels: directories, ICP search, verified roster |
+| **Waterfall enrichment** | The `ContactProvider` chain *is* a waterfall — Apollo → public web → mock, each gated on `is_configured()`, resolved in order, failures falling through |
+| Signal monitoring | **Not built.** Designed in `docs/signals-plan.md`; the deliberate gap |
+| Lead scoring | Transparent 0–100 with per-component explanations |
+| LLM personalisation | Evidence-validated outreach, refusing ungrounded drafts |
+| Sequence / inbox | Gmail compose deep links and .eml export; MailSuite tracks once sent |
+| Reporting | Run counts, handled errors, token spend, cost per qualified lead |
+
+## Lookalike modelling
+
+`scoring/similarity.py` answers a different question from the scorer: not "does
+this match the ICP we wrote down" but "does this look like the accounts that
+closed". TF-IDF cosine over text already collected — no dependency, no model
+download, no API call — and every match carries the shared terms that produced
+it, so a rep sees *why* two companies resemble each other.
+
+Reference accounts seed from `icp.REFERENCE_ACCOUNT_DOMAINS`, starting with the
+account the brief itself names as the archetype. In production that list is
+replaced by closed-won accounts from the CRM; the mechanism is unchanged.
+
+## Prospect research reports
+
+`GET /api/leads/{id}/report` builds a pre-call dossier — profile, qualification
+summary, the Tedlar angle, comparable accounts, who to talk to, and where the
+argument is weak. Deterministic and free by default; `?enhance=true` has the LLM
+rewrite it as a briefing with talking points, likely objections and an opener.
+
+Reports are **on demand, one lead at a time**. They are the most token-hungry
+thing here, so a pipeline run never generates them for the whole corpus.
+
 ## Measured results
 
 A full live run with Anthropic, Serper and Apollo configured:

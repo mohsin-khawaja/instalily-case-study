@@ -180,3 +180,24 @@ export const SCORE_COMPONENTS = [
   { key: "event_engagement", label: "Event engagement", max: 15, color: "var(--series-4)" },
   { key: "pain_alignment", label: "Pain-point alignment", max: 15, color: "var(--series-5)" },
 ] as const;
+
+export interface ReportSection {
+  heading: string;
+  body: string;
+  sources: string[];
+}
+
+export interface ProspectReport {
+  company_id: string;
+  company_name: string;
+  sections: ReportSection[];
+  generator: "deterministic" | "llm";
+  note?: string;
+  briefing?: {
+    positioning: string;
+    tedlar_angle: string;
+    talking_points: string[];
+    objections: string[];
+    opener: string;
+  } | null;
+}
