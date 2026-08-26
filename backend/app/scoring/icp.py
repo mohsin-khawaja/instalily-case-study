@@ -82,23 +82,35 @@ APPLICATION_KEYWORDS = [
 # Presence of these phrases in a company's own copy means they already sell on
 # durability -- i.e. they are pre-sold on the problem Tedlar solves.
 PAIN_KEYWORDS = {
-    "uv resistance": ["uv resistant", "uv resistance", "uv stable", "uv protection", "fade resist"],
-    "weatherability": [
-        "weather resistant",
-        "weatherable",
-        "weatherability",
-        "outdoor durability",
-        "all-weather",
+    # Broadened after the brief's own example account scored zero here: Avery
+    # Dennison's graphics site says "warranty" and "durability" throughout but
+    # never the exact phrase "year warranty", so the narrow list missed a company
+    # whose entire product line is sold on longevity. These are the words this
+    # industry actually uses.
+    "uv resistance": [
+        "uv resistant", "uv-resistant", "uv resistance", "uv stable", "uv protection",
+        "fade resist", "resists fading", "colour fastness", "color fastness",
+        "sun exposure", "uv exposure",
     ],
-    "graffiti resistance": ["graffiti resistant", "anti-graffiti", "graffiti protection"],
-    "chemical resistance": ["chemical resistant", "solvent resistant", "stain resistant"],
-    "cleanability": ["easy to clean", "cleanability", "washable", "easy clean"],
+    "weatherability": [
+        "weather resistant", "weather-resistant", "weatherable", "weatherability",
+        "outdoor durability", "all-weather", "outdoor performance", "weathering",
+        "exterior durability", "outdoor exposure",
+    ],
+    "graffiti resistance": [
+        "graffiti resistant", "anti-graffiti", "graffiti protection", "vandalism",
+    ],
+    "chemical resistance": [
+        "chemical resistant", "chemical resistance", "solvent resistant",
+        "stain resistant", "abrasion resist", "scratch resist",
+    ],
+    "cleanability": [
+        "easy to clean", "cleanability", "washable", "easy clean", "clean easily",
+    ],
     "lifespan": [
-        "year warranty",
-        "year durability",
-        "extended life",
-        "long-lasting graphic",
-        "service life",
+        "year warranty", "year durability", "extended life", "long-lasting graphic",
+        "service life", "warranty", "durability", "long-term performance",
+        "durable", "longevity",
     ],
 }
 

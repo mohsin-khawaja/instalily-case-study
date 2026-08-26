@@ -165,7 +165,11 @@ def test_events_and_companies_persist_independently(session):
     ("title", "expected"),
     [
         ("Briteline Revenue and Competitors", True),
-        ("Briteline Graphics - Company Profile", True),
+        # Genuinely ambiguous: "Briteline Graphics" could be a division of ours
+        # or a different firm, exactly like "Briteline Extrusions". For a revenue
+        # claim we reject the ambiguous case — a wrong size figure is worse than
+        # a missing one, and missing only costs confidence.
+        ("Briteline Graphics - Company Profile", False),
         # A different legal entity that merely shares a prefix.
         ("Briteline Extrusions, Inc. Revenue, Growth & Competitor Profile", False),
         ("Britelite Windows Revenue", False),
@@ -573,3 +577,28 @@ def test_a_real_contact_does_get_a_gmail_link_and_an_export(session, avery):
         assert "README.txt" in names
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize(
+    ("company_name", "result_title", "expected"),
+    [
+        # The brand appears even when the full stored name does not. Requiring
+        # the whole name left the brief's own example account unsized.
+        ("Avery Dennison Graphics Solutions", "Avery Dennison Revenue & Competitors", True),
+        ("Avery Dennison Graphics Solutions", "Avery Dennison Graphics Solutions Profile", True),
+        # A different company that merely shares the first word.
+        ("Avery Dennison Graphics Solutions", "Avery Industries Revenue", False),
+        # The earlier false positive must stay rejected.
+        ("Briteline", "Briteline Extrusions, Inc. Revenue, Growth & Competitors", False),
+        ("Briteline", "Briteline Revenue and Competitors", True),
+    ],
+)
+def test_size_lookup_matches_the_brand_without_matching_a_different_company(
+    company_name, result_title, expected
+):
+    from app.pipeline.stages.enrich_companies import _refers_to
+    from app.services.search.base import SearchResult
+
+    company = Company(name=company_name, canonical_name=company_name.lower())
+    result = SearchResult(url="https://x.test/", title=result_title)
+    assert _refers_to(company, result) is expected

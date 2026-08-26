@@ -1,13 +1,13 @@
 {
-  "events": 11,
-  "companies": 89,
-  "companies_enriched": 83,
-  "qualified_leads": 6,
-  "contacts": 9,
-  "outreach_drafts": 7,
-  "errors": 15,
-  "llm_calls": 96,
-  "llm_estimated_usd": 0.538,
-  "cost_per_qualified_lead": 0.0897,
-  "tests": 146
+  "events": 10,
+  "companies": 95,
+  "companies_enriched": 89,
+  "qualified_leads": 16,
+  "contacts": 27,
+  "outreach_drafts": 24,
+  "errors": 17,
+  "llm_calls": 129,
+  "llm_estimated_usd": 0.8475,
+  "cost_per_qualified_lead": 0.053,
+  "tests": 165
 }

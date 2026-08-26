@@ -338,6 +338,7 @@ async def link_companies_to_events(
             linked += 1
 
         linked += await _link_via_directory(ctx, companies, event)
+        linked += await _link_via_search(ctx, companies, event, terms)
 
     ctx.session.commit()
     ctx.bump("event_links", linked)
@@ -367,6 +368,60 @@ async def _link_via_directory(ctx: RunContext, companies: list[Company], event: 
             continue
         _attach(company, event, url=url, title=f"{event.name} exhibitor directory")
         linked += 1
+    return linked
+
+
+# Only worth spending a search on companies that are plausibly in the ICP at all.
+SEARCH_LINK_MIN_INDUSTRY_FIT = 20.0
+SEARCH_LINK_MAX_COMPANIES = 25
+
+
+async def _link_via_search(
+    ctx: RunContext, companies: list[Company], event: Event, terms: list[str]
+) -> int:
+    """Ask the web whether this company exhibits, when its own site is silent.
+
+    A company's site often never mentions the shows it attends, and the flagship
+    exhibitor directories are bot-walled — so without this, event engagement
+    reads zero for companies the trade press openly lists as exhibitors. Spend is
+    bounded: tier-1 events only, and only companies with real ICP fit.
+    """
+    if not (ctx.search.is_configured() and event.tier1):
+        return 0
+
+    from ...scoring.score import score_industry_fit
+
+    candidates = [
+        c
+        for c in companies
+        if event.id not in (c.event_ids or [])
+        and c.enriched
+        and score_industry_fit(c)[0] >= SEARCH_LINK_MIN_INDUSTRY_FIT
+    ][:SEARCH_LINK_MAX_COMPANIES]
+
+    linked = 0
+    for company in candidates:
+        query = f'"{company.name}" "{event.name.split(" 20")[0]}" exhibitor'
+        results = await ctx.attempt(
+            STAGE,
+            lambda q=query: ctx.search.search(q, limit=4),
+            entity_type="event_participation",
+            entity_ref=f"{company.name} @ {event.slug}",
+            default=[],
+        ) or []
+        for result in results:
+            haystack = f"{result.title} {result.snippet}".lower()
+            names_company = (company.canonical_name or "").lower() in haystack
+            names_event = any(term in haystack for term in terms)
+            if names_company and names_event:
+                _attach(
+                    company,
+                    event,
+                    url=result.url,
+                    title=f"{result.title[:120]} — names {company.name} with {event.name}",
+                )
+                linked += 1
+                break
     return linked
 
 

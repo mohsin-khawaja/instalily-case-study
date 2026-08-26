@@ -93,6 +93,11 @@ class ExtractedProfile(BaseModel):
 
 
 async def run(ctx: RunContext, companies: list[Company]) -> list[Company]:
+    # Enrich the accounts most likely to matter first. Apollo's free tier rate
+    # limits partway through a run, so whoever is processed last gets no
+    # firmographics — and on one run that was Avery Dennison, the account the
+    # brief itself names as the archetype. Ordering is the cheapest possible fix.
+    companies = sorted(companies, key=_enrichment_priority)
     targets = companies[: ctx.limit] if ctx.limit else companies
 
     # Enrichment is almost entirely network wait: four or five fetches plus an
@@ -251,6 +256,21 @@ async def _apply_apollo_firmographics(ctx: RunContext, company: Company) -> bool
         ]
     ctx.session.add(company)
     return True
+
+
+def _enrichment_priority(company: Company) -> tuple[int, str]:
+    """Roster and reference accounts first, then everything else by name."""
+    from .icp_roster import ICP_ROSTER
+
+    roster_domains = {
+        (url.split("//")[-1].split("/")[0].removeprefix("www.")) for _n, url in ICP_ROSTER
+    }
+    domain = company.domain or ""
+    if domain in icp.REFERENCE_ACCOUNT_DOMAINS:
+        return (0, company.name.lower())
+    if any(domain in d or d.endswith(domain) for d in roster_domains if domain):
+        return (1, company.name.lower())
+    return (2, company.name.lower())
 
 
 async def _enrich_one(ctx: RunContext, company: Company) -> Company:
@@ -518,6 +538,24 @@ def _brand_from_title(title: str | None) -> str | None:
     return min(parts, key=lambda part: len(part.split()))
 
 
+# Words that describe a page about a company rather than extending its name.
+_DESCRIPTOR_WORDS = frozenset({
+    "revenue", "employees", "company", "profile", "competitors", "competitor",
+    "funding", "info", "overview", "size", "financials", "financial", "growth",
+    "number", "of", "and", "the", "inc", "llc", "ltd", "corp", "corporation",
+    "estimated", "annual", "headquarters", "hq", "linkedin", "zoominfo", "growjo",
+    "crunchbase", "salary", "salaries", "reviews", "jobs", "careers", "news",
+    "stock", "market", "cap", "worth", "net", "sales", "employee", "headcount",
+    "is", "a", "in", "for", "at", "top", "about", "statistics", "stats", "data",
+})
+
+
+def _brand_of(name: str) -> str:
+    """The first two tokens of a company name — its brand, not its division."""
+    tokens = [tok for tok in name.split() if tok]
+    return " ".join(tokens[:2]) if len(tokens) > 2 else name
+
+
 def _refers_to(company: Company, result) -> bool:
     """Guard against confident answers about a similarly-named company.
 
@@ -531,16 +569,28 @@ def _refers_to(company: Company, result) -> bool:
     if len(name) < 4:
         return False
     title = normalize_name(result.title)
-    if name not in title:
+
+    # Match the brand, not the full stored name. "Avery Dennison Graphics
+    # Solutions" never appears verbatim on a page titled "Avery Dennison
+    # Revenue", so requiring the whole name rejected exactly the results that
+    # answer the question — and left the brief's own example account unsized.
+    short = normalize_name(_brand_of(company.name))
+    matched = name if name in title else (short if short and short in title else None)
+    if matched is None:
         return False
-    # Allow a trailing descriptor ("revenue", "company profile"), not a different
-    # legal entity: at most one extra token before the boilerplate.
-    extra = [tok for tok in title.replace(name, "", 1).split() if tok]
-    boilerplate = {"revenue", "employees", "company", "profile", "competitors",
-                   "funding", "info", "overview", "size", "financials", "growth",
-                   "number", "of", "and", "the", "inc", "llc", "corp", "estimated",
-                   "annual", "headquarters", "linkedin", "zoominfo", "growjo"}
-    return sum(1 for tok in extra if tok not in boilerplate) <= 1
+    name = matched
+    # What follows the matched name decides whether this is the same company.
+    # "Briteline Extrusions" is a different firm; "Briteline Revenue" is a page
+    # about ours. Counting stray tokens was too fragile — it turned on whether
+    # one word happened to be in a boilerplate list — so look at the token that
+    # immediately follows instead. It must be a descriptor, or part of this
+    # company's own full name.
+    tail = title.split(name, 1)[1].split() if name in title else []
+    if not tail:
+        return True
+    following = tail[0]
+    own_name_tokens = set(normalize_name(company.name).split())
+    return following in _DESCRIPTOR_WORDS or following in own_name_tokens
 
 
 def _revenue_from_text(text: str) -> float | None:
