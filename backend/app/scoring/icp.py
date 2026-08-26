@@ -138,6 +138,18 @@ TIER1_EVENT_POINTS = 8.0
 ADDITIONAL_EVENT_POINTS = 4.0
 ASSOCIATION_POINTS = 3.0
 
+# --- Reference accounts (lookalike seed) ---------------------------------
+# Accounts known to be a strong fit, used as the anchor for lookalike matching.
+# The brief itself names Avery Dennison Graphics Solutions as the archetype, so
+# it seeds the set. In a real deployment this list is replaced by closed-won
+# accounts pulled from the CRM — the mechanism is identical either way.
+REFERENCE_ACCOUNT_DOMAINS = [
+    "averydennison.com",
+    "orafol.com",
+    "drytac.com",
+    "mactac.com",
+]
+
 # --- Decision-maker targeting -------------------------------------------
 TARGET_TITLES = [
     "VP Product",

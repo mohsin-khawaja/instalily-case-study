@@ -102,6 +102,10 @@ class LeadOut(BaseModel):
     # that produced the points, so it can never disagree with them.
     score_explanations: list[dict] = []
     score_summary: str | None = None
+    # Lookalike modelling: which known-good accounts this company resembles,
+    # and the shared terms that produced the match.
+    lookalikes: list[dict] = []
+    is_reference_account: bool = False
     evidence: list[dict] = []
     flags: list[str] = []
 

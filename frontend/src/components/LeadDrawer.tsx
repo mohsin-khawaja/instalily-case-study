@@ -144,6 +144,53 @@ export function LeadDrawer({
             </p>
           </section>
 
+          {/* ── Lookalikes ────────────────────────────────────────────── */}
+          {(lead.lookalikes.length > 0 || lead.is_reference_account) && (
+            <section style={{ marginBottom: 24 }}>
+              <SectionLabel>
+                {lead.is_reference_account ? "Reference account" : "Resembles accounts you know"}
+              </SectionLabel>
+              {lead.is_reference_account ? (
+                <Muted>
+                  This is one of the seeded known-good accounts other companies are matched
+                  against. In production this set would be your closed-won list.
+                </Muted>
+              ) : (
+                <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
+                  {lead.lookalikes.map((m) => (
+                    <li
+                      key={m.company_id}
+                      style={{
+                        border: "1px solid var(--c-hairline)",
+                        borderRadius: 6,
+                        padding: "8px 11px",
+                        marginBottom: 6,
+                        background: "var(--c-page)",
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span style={{ fontSize: 12, fontWeight: 600 }}>{m.reference_name}</span>
+                        <span
+                          className="tabular"
+                          style={{ fontSize: 11, color: "var(--c-score-1)" }}
+                        >
+                          {(m.similarity * 100).toFixed(0)}% similar
+                        </span>
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {m.shared_terms.map((term) => (
+                          <Chip key={term} mono>
+                            {term}
+                          </Chip>
+                        ))}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
+
           {/* ── Evidence ──────────────────────────────────────────────── */}
           <section style={{ marginBottom: 24 }}>
             <SectionLabel>Evidence ({lead.evidence.length})</SectionLabel>

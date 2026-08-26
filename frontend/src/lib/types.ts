@@ -79,6 +79,14 @@ export interface ComponentExplanation {
   to_improve?: string | null;
 }
 
+export interface Lookalike {
+  company_id: string;
+  company_name: string;
+  similarity: number;
+  shared_terms: string[];
+  reference_name: string;
+}
+
 export interface Lead {
   company_id: string;
   company_name: string;
@@ -103,6 +111,8 @@ export interface Lead {
   rationale_source: string;
   score_explanations: ComponentExplanation[];
   score_summary?: string | null;
+  lookalikes: Lookalike[];
+  is_reference_account: boolean;
   evidence: Evidence[];
   flags: string[];
   events: EventOut[];

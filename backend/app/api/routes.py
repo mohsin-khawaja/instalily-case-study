@@ -24,7 +24,9 @@ from ..models.enums import STAGE_ORDER, PipelineMode, RunStatus, StageName, Tier
 from ..models.errors import PipelineRun, StageError
 from ..pipeline.runner import PipelineRunner, _parse_stages
 from ..pipeline.stages.draft_outreach import PLACEHOLDER_PROVIDERS
+from ..scoring import icp
 from ..scoring.explain import explain_company, summarise
+from ..scoring.similarity import rank_lookalikes, similar_to
 from ..services.mail import build_eml_bundle, gmail_compose_url
 from .schemas import (
     ContactOut,
@@ -294,6 +296,17 @@ def export_outreach_bundle(
     )
 
 
+@router.get("/leads/{company_id}/similar")
+def similar_companies(
+    company_id: str, session: Session = Depends(get_session), limit: int = 6
+) -> list[dict]:
+    """Nearest neighbours of one company — "find me more like this account"."""
+    companies = [c for c in session.exec(select(Company)).all() if c.enriched]
+    if not any(c.id == company_id for c in companies):
+        raise HTTPException(status_code=404, detail="company not found or not enriched")
+    return [m.as_dict() for m in similar_to(company_id, companies, limit=limit)]
+
+
 @router.get("/errors", response_model=list[StageErrorOut])
 def list_errors(
     session: Session = Depends(get_session),
@@ -411,6 +424,13 @@ def _build_leads(session: Session) -> list[LeadOut]:
     for draft in session.exec(select(OutreachDraft)).all():
         drafts_by_contact.setdefault(draft.contact_id, []).append(draft)
 
+    # Lookalikes are computed once over the whole corpus, not per lead.
+    enriched = [c for c in companies if c.enriched]
+    reference_ids = {
+        c.id for c in enriched if (c.domain or "") in icp.REFERENCE_ACCOUNT_DOMAINS
+    }
+    lookalikes = rank_lookalikes(enriched, reference_ids)
+
     leads: list[LeadOut] = []
     for company in companies:
         qualification = qualifications.get(company.id)
@@ -442,6 +462,8 @@ def _build_leads(session: Session) -> list[LeadOut]:
                 ),
                 score_explanations=explain_company(company, events),
                 score_summary=summarise(company, events),
+                lookalikes=[m.as_dict() for m in lookalikes.get(company.id, [])],
+                is_reference_account=company.id in reference_ids,
                 evidence=qualification.evidence if qualification else [],
                 flags=qualification.flags if qualification else [],
                 events=[
