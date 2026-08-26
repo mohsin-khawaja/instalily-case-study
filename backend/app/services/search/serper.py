@@ -7,7 +7,9 @@ import logging
 import httpx
 
 from ...config import get_settings
+from ..http import Fetcher
 from .base import SearchResult
+from .cache import SearchCache
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +19,8 @@ ENDPOINT = "https://google.serper.dev/search"
 class SerperProvider:
     name = "serper"
 
-    def __init__(self, api_key: str | None = None) -> None:
+    def __init__(self, api_key: str | None = None, fetcher: Fetcher | None = None) -> None:
+        self._cache = SearchCache(self.name, fetcher)
         self._api_key = api_key or get_settings().serper_api_key
 
     def is_configured(self) -> bool:
@@ -27,6 +30,10 @@ class SerperProvider:
         if not self.is_configured():
             logger.info("serper provider not configured; returning no results")
             return []
+
+        cached = self._cache.get(query, limit)
+        if cached is not None and not self._cache.live:
+            return self._parse(cached)
         try:
             async with httpx.AsyncClient(timeout=20.0) as client:
                 response = await client.post(
@@ -36,9 +43,13 @@ class SerperProvider:
                 )
                 response.raise_for_status()
                 data = response.json()
+                self._cache.put(query, limit, response.text)
         except (httpx.HTTPError, ValueError) as exc:
             logger.warning("serper search failed for %r: %s", query, exc)
-            return []
+            return self._parse(cached) if cached is not None else []
+        return self._parse(data)
+
+    def _parse(self, data: dict) -> list[SearchResult]:
         return [
             SearchResult(
                 url=item.get("link", ""),

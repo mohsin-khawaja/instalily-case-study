@@ -78,6 +78,19 @@ cd frontend && npm run dev                     # dashboard on :3000
 Do not run the CLI and the API server against the database at the same time —
 SQLite allows one writer, and the loser blocks until `busy_timeout`.
 
+## Failure modes found the hard way
+
+- **Provider errors are availability, not bugs.** An exhausted credit balance
+  arrives as an SDK exception the pipeline has never heard of. Unwrapped it
+  escapes `RunContext.attempt` and fails a whole stage — enrichment degraded
+  per-record while qualification died outright. `services/llm/client.py` now
+  converts anything raised by the Anthropic SDK into `LLMUnavailable`; our own
+  `TypeError` still propagates.
+- **Keyed search providers must go through the cache.** Serper and Tavily are
+  POST APIs with their own clients, so they used to bypass it — a "cached" run
+  silently re-searched live, found different companies, then failed to fetch
+  their sites from cache. `services/search/cache.py` restores determinism.
+
 ## Scoring gotchas found the hard way
 
 - **`SITE_TEXT_CAP` is large on purpose.** The scorer keyword-scans this text,

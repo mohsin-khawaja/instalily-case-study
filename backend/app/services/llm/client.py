@@ -141,7 +141,6 @@ class LLMClient:
         model: str | None = None,
     ) -> T:
         """Return a validated `schema_model`, repairing once on invalid output."""
-        import asyncio
 
         model = model or self.model_extraction
         schema = _json_schema(schema_model)
@@ -151,7 +150,7 @@ class LLMClient:
                 model=model, system=system, prompt=text_prompt, schema=schema
             )
 
-        raw = await asyncio.to_thread(_call, prompt)
+        raw = await _guarded(_call, prompt)
         try:
             return _parse(schema_model, raw)
         except (ValidationError, ValueError) as first_error:
@@ -162,13 +161,40 @@ class LLMClient:
                 "Reply again with JSON that satisfies the schema exactly. "
                 "Use null for anything you cannot support with the supplied text."
             )
-            repaired = await asyncio.to_thread(_call, repair_prompt)
+            repaired = await _guarded(_call, repair_prompt)
             try:
                 return _parse(schema_model, repaired)
             except (ValidationError, ValueError) as second_error:
                 raise LLMOutputError(
                     f"{schema_model.__name__} invalid after repair: {second_error}"
                 ) from second_error
+
+
+async def _guarded(call, prompt: str) -> str:
+    """Run one provider call, converting transport-level failures into LLMUnavailable.
+
+    An exhausted credit balance, a revoked key or a rate limit arrives as an
+    SDK exception the pipeline has never heard of. Left unwrapped it escapes
+    `RunContext.attempt` and takes down a whole stage — which is exactly what
+    happened when the account ran out of credit mid-run: enrichment degraded
+    per-record as designed, while qualification failed outright. Provider
+    problems are an availability condition, not a bug, so they degrade the
+    record and let the deterministic path take over.
+    """
+    import asyncio
+
+    try:
+        return await asyncio.to_thread(call, prompt)
+    except Exception as exc:  # noqa: BLE001 -- re-raised as a typed failure below
+        if _is_provider_error(exc):
+            raise LLMUnavailable(f"{type(exc).__name__}: {exc}"[:300]) from exc
+        raise
+
+
+def _is_provider_error(exc: BaseException) -> bool:
+    """True for anything raised by the Anthropic SDK itself."""
+    module = type(exc).__module__ or ""
+    return module.startswith("anthropic") or module.startswith("httpx")
 
 
 def _parse(schema_model: type[T], raw: str) -> T:

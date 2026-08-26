@@ -23,9 +23,9 @@ def build_search_provider(fetcher: Fetcher, name: str | None = None) -> SearchPr
     """Resolve SEARCH_PROVIDER, falling back to the keyless provider if unconfigured."""
     name = (name or get_settings().search_provider).lower()
     if name == "tavily":
-        provider: SearchProvider = TavilyProvider()
+        provider: SearchProvider = TavilyProvider(fetcher=fetcher)
     elif name == "serper":
-        provider = SerperProvider()
+        provider = SerperProvider(fetcher=fetcher)
     else:
         return DuckDuckGoProvider(fetcher)
     return provider if provider.is_configured() else DuckDuckGoProvider(fetcher)

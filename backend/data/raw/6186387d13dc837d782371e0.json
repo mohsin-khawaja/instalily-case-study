@@ -1,0 +1,6 @@
+{
+  "url": "https://metrorestyling.com/company",
+  "status_code": 429,
+  "fetched_at": "2026-08-26T00:00:51.994499+00:00",
+  "error": "giving up after 3 attempts (HTTP 429)"
+}

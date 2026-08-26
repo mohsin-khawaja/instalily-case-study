@@ -12,7 +12,9 @@ import logging
 import httpx
 
 from ...config import get_settings
+from ..http import Fetcher
 from .base import SearchResult
+from .cache import SearchCache
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +24,8 @@ ENDPOINT = "https://api.tavily.com/search"
 class TavilyProvider:
     name = "tavily"
 
-    def __init__(self, api_key: str | None = None) -> None:
+    def __init__(self, api_key: str | None = None, fetcher: Fetcher | None = None) -> None:
+        self._cache = SearchCache(self.name, fetcher)
         self._api_key = api_key or get_settings().tavily_api_key
 
     def is_configured(self) -> bool:
@@ -32,6 +35,10 @@ class TavilyProvider:
         if not self.is_configured():
             logger.info("tavily provider not configured; returning no results")
             return []
+
+        cached = self._cache.get(query, limit)
+        if cached is not None and not self._cache.live:
+            return self._parse(cached)
         payload = {
             "api_key": self._api_key,
             "query": query,
@@ -43,9 +50,13 @@ class TavilyProvider:
                 response = await client.post(ENDPOINT, json=payload)
                 response.raise_for_status()
                 data = response.json()
+                self._cache.put(query, limit, response.text)
         except (httpx.HTTPError, ValueError) as exc:
             logger.warning("tavily search failed for %r: %s", query, exc)
-            return []
+            return self._parse(cached) if cached is not None else []
+        return self._parse(data)
+
+    def _parse(self, data: dict) -> list[SearchResult]:
         return [
             SearchResult(
                 url=item.get("url", ""),

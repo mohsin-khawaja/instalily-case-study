@@ -229,7 +229,7 @@ Interactive docs at `/docs`.
 | Live fetch fails, cache has a stale copy | Serve the stale copy and log it |
 | Permanent fetch failure (403/404/timeout) | Recorded *into* the cache, so a `--mode cached` replay reproduces the original error rather than reporting a cache miss |
 | Malformed LLM JSON | One repair round-trip carrying the validator error, then the record degrades |
-| No API key | Deterministic fallback path for every LLM and search call |
+| No API key, exhausted credits, revoked key, provider rate limit | Converted to `LLMUnavailable` and degraded per record — a verified full run with the LLM entirely unavailable still produced 97 qualifications, 16 qualified leads and 23 drafts from the deterministic path |
 | Duplicate companies | Registrable-domain key, then normalised-name fuzzy match ≥ 0.90 |
 | Hallucinated claim | Stripped from the rationale, record flagged |
 | A stage raising outright | Recorded, marked `failed`, later stages still run |

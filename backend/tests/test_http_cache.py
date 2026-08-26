@@ -135,3 +135,74 @@ async def test_a_cached_failure_does_not_shadow_a_later_success(cache):
 
     assert response.text == "back online"
     assert response.error is None
+
+
+# --- Search provider caching ---------------------------------------------
+
+
+async def test_keyed_search_is_cached_so_a_replay_is_deterministic(cache, monkeypatch):
+    """A cached run must replay the same search answers, not re-query live.
+
+    Serper and Tavily are POST APIs with their own clients, so before this they
+    bypassed the cache: a "cached" run silently re-searched, discovered
+    different companies, and then failed to fetch their sites from cache.
+    """
+    from app.services.search import serper
+
+    calls = {"n": 0}
+    payload = {
+        "organic": [
+            {"link": "https://drytac.com/", "title": "Drytac", "snippet": "Laminating films"}
+        ]
+    }
+
+    real_client = httpx.AsyncClient
+
+    def handler(request):
+        calls["n"] += 1
+        return httpx.Response(200, json=payload)
+
+    monkeypatch.setattr(
+        serper.httpx,
+        "AsyncClient",
+        lambda **kw: real_client(transport=httpx.MockTransport(handler)),
+    )
+
+    async with Fetcher(live=True, cache=cache) as live_fetcher:
+        provider = serper.SerperProvider(api_key="k", fetcher=live_fetcher)
+        first = await provider.search("graphic films", limit=5)
+
+    async with Fetcher(live=False, cache=cache) as cached_fetcher:
+        replay = serper.SerperProvider(api_key="k", fetcher=cached_fetcher)
+        second = await replay.search("graphic films", limit=5)
+
+    assert [r.url for r in first] == [r.url for r in second]
+    assert calls["n"] == 1, "the replay hit the network"
+
+
+async def test_a_live_search_falls_back_to_cache_when_the_api_fails(cache, monkeypatch):
+    from app.services.search import serper
+
+    real_client = httpx.AsyncClient
+    state = {"fail": False}
+
+    def handler(request):
+        if state["fail"]:
+            return httpx.Response(500)
+        return httpx.Response(
+            200, json={"organic": [{"link": "https://x.test/", "title": "X", "snippet": ""}]}
+        )
+
+    monkeypatch.setattr(
+        serper.httpx,
+        "AsyncClient",
+        lambda **kw: real_client(transport=httpx.MockTransport(handler)),
+    )
+
+    async with Fetcher(live=True, cache=cache) as fetcher:
+        provider = serper.SerperProvider(api_key="k", fetcher=fetcher)
+        await provider.search("q", limit=3)
+        state["fail"] = True
+        recovered = await provider.search("q", limit=3)
+
+    assert [r.url for r in recovered] == ["https://x.test/"]

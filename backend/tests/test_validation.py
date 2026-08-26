@@ -105,3 +105,54 @@ async def test_repair_round_trip_is_counted_as_two_calls():
     await llm.structured(Extracted, prompt="p", system="s")
     assert llm.usage.calls == 2
     assert llm.usage.input_tokens == 200
+
+
+# --- Provider availability -------------------------------------------------
+
+
+class _FakeAnthropicError(Exception):
+    """Stands in for an SDK exception: what matters is the module it comes from."""
+
+
+_FakeAnthropicError.__module__ = "anthropic"
+
+
+class _OutOfCreditLLM(LLMClient):
+    def __init__(self) -> None:
+        super().__init__(api_key="test-key")
+
+    def _complete_json(self, *, model, system, prompt, schema):
+        raise _FakeAnthropicError(
+            "Error code: 400 - Your credit balance is too low to access the Anthropic API."
+        )
+
+
+class _BuggyLLM(LLMClient):
+    def __init__(self) -> None:
+        super().__init__(api_key="test-key")
+
+    def _complete_json(self, *, model, system, prompt, schema):
+        raise TypeError("a genuine programming error in our own code")
+
+
+async def test_an_exhausted_account_degrades_the_record_not_the_stage():
+    """Billing, auth and rate-limit failures are availability, not bugs.
+
+    Left unwrapped these escape RunContext.attempt and fail a whole stage —
+    which is what happened when the account ran out of credit mid-run.
+    """
+    with pytest.raises(LLMUnavailable) as exc:
+        await _OutOfCreditLLM().structured(Extracted, prompt="p", system="s")
+    assert "credit balance" in str(exc.value)
+
+
+async def test_a_real_bug_still_propagates():
+    """The wrapper must not turn our own mistakes into a soft degradation."""
+    with pytest.raises(TypeError):
+        await _BuggyLLM().structured(Extracted, prompt="p", system="s")
+
+
+def test_llm_unavailable_is_an_expected_pipeline_failure():
+    from app.pipeline.context import EXPECTED_FAILURES
+
+    assert LLMUnavailable in EXPECTED_FAILURES
