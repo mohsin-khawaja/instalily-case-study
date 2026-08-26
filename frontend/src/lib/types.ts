@@ -54,6 +54,7 @@ export interface OutreachOut {
   tedlar_value_prop?: string | null;
   approved: boolean;
   generator: string;
+  gmail_url?: string | null;
 }
 
 export interface ScoreBreakdown {
@@ -63,6 +64,19 @@ export interface ScoreBreakdown {
   event_engagement: number;
   pain_alignment: number;
   total: number;
+}
+
+export interface ComponentExplanation {
+  key: string;
+  label: string;
+  points: number;
+  max_points: number;
+  weight_pct: number;
+  verdict: "Strong" | "Partial" | "Weak" | "No evidence";
+  reasoning: string;
+  matched: string[];
+  source_url?: string | null;
+  to_improve?: string | null;
 }
 
 export interface Lead {
@@ -87,6 +101,8 @@ export interface Lead {
   confidence: number;
   rationale?: string | null;
   rationale_source: string;
+  score_explanations: ComponentExplanation[];
+  score_summary?: string | null;
   evidence: Evidence[];
   flags: string[];
   events: EventOut[];

@@ -65,6 +65,15 @@ export const api = {
     return `${BASE}/api/leads.csv${qs ? `?${qs}` : ""}`;
   },
 
+  /** Zip of .eml drafts — drag into Gmail; MailSuite tracks them once sent. */
+  outreachZipUrl: (filters: { tier?: string[]; approved_only?: boolean } = {}) => {
+    const params = new URLSearchParams();
+    filters.tier?.forEach((t) => params.append("tier", t));
+    if (filters.approved_only) params.set("approved_only", "true");
+    const qs = params.toString();
+    return `${BASE}/api/outreach.zip${qs ? `?${qs}` : ""}`;
+  },
+
   startRun: (mode: string, limit?: number) =>
     request<RunOut>("/api/pipeline/run", {
       method: "POST",

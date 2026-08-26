@@ -69,6 +69,8 @@ class OutreachOut(BaseModel):
     tedlar_value_prop: str | None = None
     approved: bool
     generator: str
+    # One-click Gmail compose; no OAuth, and MailSuite tracks it once sent.
+    gmail_url: str | None = None
 
 
 class LeadOut(BaseModel):
@@ -96,6 +98,10 @@ class LeadOut(BaseModel):
     confidence: float = 0.0
     rationale: str | None = None
     rationale_source: str = "deterministic"
+    # Why each component scored what it did — derived from the same computation
+    # that produced the points, so it can never disagree with them.
+    score_explanations: list[dict] = []
+    score_summary: str | None = None
     evidence: list[dict] = []
     flags: list[str] = []
 

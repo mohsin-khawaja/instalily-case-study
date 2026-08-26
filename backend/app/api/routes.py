@@ -23,6 +23,9 @@ from ..models.domain import Company, Contact, Event, OutreachDraft, Qualificatio
 from ..models.enums import STAGE_ORDER, PipelineMode, RunStatus, StageName, Tier
 from ..models.errors import PipelineRun, StageError
 from ..pipeline.runner import PipelineRunner, _parse_stages
+from ..pipeline.stages.draft_outreach import PLACEHOLDER_PROVIDERS
+from ..scoring.explain import explain_company, summarise
+from ..services.mail import build_eml_bundle, gmail_compose_url
 from .schemas import (
     ContactOut,
     EventOut,
@@ -249,6 +252,48 @@ def patch_outreach(
     return _outreach_out(draft)
 
 
+@router.get("/outreach.zip")
+def export_outreach_bundle(
+    session: Session = Depends(get_session),
+    tier: list[Tier] | None = Query(default=None),
+    approved_only: bool = False,
+) -> Response:
+    """Every draft as a .eml, zipped — drag into Gmail and MailSuite does the rest."""
+    drafts: list[dict] = []
+    for lead in _build_leads(session):
+        if tier and lead.tier not in tier:
+            continue
+        contact = lead.contacts[0] if lead.contacts else None
+        # Defence in depth. Drafting already refuses placeholder contacts, but a
+        # row written before that guard existed must not reach an export — an
+        # export is a rep about to press send.
+        if contact is not None and contact.provider in PLACEHOLDER_PROVIDERS:
+            continue
+        for draft in lead.outreach:
+            if approved_only and not draft.approved:
+                continue
+            drafts.append(
+                {
+                    "subject": draft.subject,
+                    "body": draft.edited_body or draft.body,
+                    "company": lead.company_name,
+                    "to": contact.email if contact else None,
+                    "to_name": contact.full_name if contact else None,
+                }
+            )
+    if not drafts:
+        raise HTTPException(status_code=404, detail="no drafts match those filters")
+
+    stamp = utcnow().strftime("%Y%m%d")
+    return Response(
+        content=build_eml_bundle(drafts),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="tedlar-outreach-{stamp}.zip"'
+        },
+    )
+
+
 @router.get("/errors", response_model=list[StageErrorOut])
 def list_errors(
     session: Session = Depends(get_session),
@@ -395,6 +440,8 @@ def _build_leads(session: Session) -> list[LeadOut]:
                 rationale_source=(
                     qualification.rationale_source if qualification else "deterministic"
                 ),
+                score_explanations=explain_company(company, events),
+                score_summary=summarise(company, events),
                 evidence=qualification.evidence if qualification else [],
                 flags=qualification.flags if qualification else [],
                 events=[
@@ -404,7 +451,7 @@ def _build_leads(session: Session) -> list[LeadOut]:
                 ],
                 contacts=[_contact_out(c) for c in company_contacts],
                 outreach=[
-                    _outreach_out(d)
+                    _outreach_out(d, c)
                     for c in company_contacts
                     for d in drafts_by_contact.get(c.id, [])
                 ],
@@ -452,8 +499,16 @@ def _contact_out(contact: Contact) -> ContactOut:
     )
 
 
-def _outreach_out(draft: OutreachDraft) -> OutreachOut:
+def _outreach_out(draft: OutreachDraft, contact: Contact | None = None) -> OutreachOut:
+    body = draft.edited_body or draft.body
+    placeholder = contact is not None and contact.provider in PLACEHOLDER_PROVIDERS
     return OutreachOut(
+        # No send affordance for a person who does not exist.
+        gmail_url=(
+            None
+            if placeholder
+            else gmail_compose_url(draft.subject, body, to=contact.email if contact else None)
+        ),
         id=draft.id,
         contact_id=draft.contact_id,
         subject=draft.subject,

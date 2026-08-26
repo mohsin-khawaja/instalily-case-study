@@ -494,3 +494,82 @@ async def test_no_outreach_is_drafted_to_an_invented_person(ctx, avery):
     assert fake.id not in recipients
     assert any("placeholder contact" in (e.message or "") for e in ctx.errors)
     assert ctx.session.exec(select(OutreachDraft)).all()
+
+
+def test_exports_never_carry_a_draft_for_an_invented_person(session, avery):
+    """An export is a rep about to press send. Placeholder contacts must not reach it."""
+
+    from fastapi.testclient import TestClient
+
+    from app.db import get_session
+    from app.main import app
+    from app.models.domain import Contact, OutreachDraft, Qualification
+    from app.models.enums import Tier
+
+    session.add(avery)
+    session.add(Qualification(company_id=avery.id, tier=Tier.A, score_total=80.0, confidence=0.9))
+    mock_contact = Contact(
+        company_id=avery.id, full_name="Jordan Reed", provider="mock", confidence=0.0
+    )
+    session.add(mock_contact)
+    session.commit()
+    session.add(
+        OutreachDraft(
+            contact_id=mock_contact.id,
+            company_id=avery.id,
+            subject="Should never ship",
+            body="Hi Jordan,",
+        )
+    )
+    session.commit()
+
+    app.dependency_overrides[get_session] = lambda: session
+    try:
+        client = TestClient(app)
+        # Nothing exportable, so the endpoint says so rather than shipping it.
+        assert client.get("/api/outreach.zip").status_code == 404
+        # And the UI gets no one-click send affordance for that draft.
+        lead = client.get("/api/leads").json()[0]
+        assert lead["outreach"][0]["gmail_url"] is None
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_a_real_contact_does_get_a_gmail_link_and_an_export(session, avery):
+    import zipfile as _zip
+    from io import BytesIO
+
+    from fastapi.testclient import TestClient
+
+    from app.db import get_session
+    from app.main import app
+    from app.models.domain import Contact, OutreachDraft, Qualification
+    from app.models.enums import Tier
+
+    session.add(avery)
+    session.add(Qualification(company_id=avery.id, tier=Tier.A, score_total=80.0, confidence=0.9))
+    real = Contact(
+        company_id=avery.id, full_name="Dana Whitfield", provider="public_web", confidence=0.7
+    )
+    session.add(real)
+    session.commit()
+    session.add(
+        OutreachDraft(
+            contact_id=real.id, company_id=avery.id, subject="Tedlar films", body="Hi Dana,"
+        )
+    )
+    session.commit()
+
+    app.dependency_overrides[get_session] = lambda: session
+    try:
+        client = TestClient(app)
+        lead = client.get("/api/leads").json()[0]
+        assert "mail.google.com" in lead["outreach"][0]["gmail_url"]
+
+        bundle = client.get("/api/outreach.zip")
+        assert bundle.status_code == 200
+        names = _zip.ZipFile(BytesIO(bundle.content)).namelist()
+        assert any(n.endswith(".eml") for n in names)
+        assert "README.txt" in names
+    finally:
+        app.dependency_overrides.clear()

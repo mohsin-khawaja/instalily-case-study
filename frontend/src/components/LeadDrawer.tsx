@@ -2,7 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { SCORE_COMPONENTS, type Lead, type OutreachOut } from "@/lib/types";
+import {
+  SCORE_COMPONENTS,
+  type ComponentExplanation,
+  type Lead,
+  type OutreachOut,
+} from "@/lib/types";
 import {
   Button,
   CautionChip,
@@ -86,41 +91,34 @@ export function LeadDrawer({
             <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
               {SCORE_COMPONENTS.map((component) => {
                 const value = Number(lead.score?.[component.key] ?? 0);
-                const pct = (value / component.max) * 100;
+                const detail = lead.score_explanations?.find((e) => e.key === component.key);
                 return (
-                  <li key={component.key} className="mb-1.5 flex items-center gap-3">
-                    <span style={{ width: 138, fontSize: 11.5, color: "var(--c-t2)" }}>
-                      {component.label}
-                    </span>
-                    <span
-                      style={{
-                        position: "relative",
-                        flex: 1,
-                        height: 5,
-                        borderRadius: 3,
-                        background: "var(--c-track)",
-                      }}
-                    >
-                      <span
-                        style={{
-                          position: "absolute",
-                          inset: "0 auto 0 0",
-                          width: `${pct}%`,
-                          borderRadius: 3,
-                          background: component.color,
-                        }}
-                      />
-                    </span>
-                    <span
-                      className="tabular"
-                      style={{ width: 46, textAlign: "right", fontSize: 11, color: "var(--c-t2)" }}
-                    >
-                      {value.toFixed(0)}/{component.max}
-                    </span>
-                  </li>
+                  <ComponentRow
+                    key={component.key}
+                    label={component.label}
+                    color={component.color}
+                    value={value}
+                    max={component.max}
+                    detail={detail}
+                  />
                 );
               })}
             </ul>
+
+            {lead.score_summary && (
+              <p
+                style={{
+                  fontSize: 11.5,
+                  lineHeight: 1.6,
+                  color: "var(--c-t2)",
+                  marginTop: 10,
+                  paddingTop: 10,
+                  borderTop: "1px solid var(--c-hairline)",
+                }}
+              >
+                {lead.score_summary}
+              </p>
+            )}
 
             {lead.flags.length > 0 && (
               <div className="mt-3 flex flex-wrap gap-1.5">
@@ -300,6 +298,138 @@ export function LeadDrawer({
         </div>
       </aside>
     </>
+  );
+}
+
+/* Each component expands to the reasoning behind its number: which terms matched,
+   where they were read, and what would move it. Collapsed by default so the
+   breakdown still scans in one glance. */
+const VERDICT_COLOR: Record<string, string> = {
+  Strong: "var(--c-good)",
+  Partial: "var(--c-score-1)",
+  Weak: "var(--c-warning)",
+  "No evidence": "var(--c-t3)",
+};
+
+function ComponentRow({
+  label,
+  color,
+  value,
+  max,
+  detail,
+}: {
+  label: string;
+  color: string;
+  value: number;
+  max: number;
+  detail?: ComponentExplanation;
+}) {
+  const [open, setOpen] = useState(false);
+  const pct = (value / max) * 100;
+
+  return (
+    <li style={{ marginBottom: 6 }}>
+      <button
+        onClick={() => detail && setOpen((o) => !o)}
+        disabled={!detail}
+        className="flex w-full items-center gap-3"
+        style={{
+          background: "transparent",
+          border: "none",
+          padding: "2px 0",
+          cursor: detail ? "pointer" : "default",
+          textAlign: "left",
+          color: "inherit",
+        }}
+      >
+        <span
+          aria-hidden
+          style={{
+            width: 9,
+            color: "var(--c-t3)",
+            fontSize: 9,
+            transform: open ? "rotate(90deg)" : "none",
+            transition: "transform 120ms",
+          }}
+        >
+          {detail ? "▶" : ""}
+        </span>
+        <span style={{ width: 130, fontSize: 11.5, color: "var(--c-t2)" }}>{label}</span>
+        <span
+          style={{
+            position: "relative",
+            flex: 1,
+            height: 5,
+            borderRadius: 3,
+            background: "var(--c-track)",
+          }}
+        >
+          <span
+            style={{
+              position: "absolute",
+              inset: "0 auto 0 0",
+              width: `${pct}%`,
+              borderRadius: 3,
+              background: color,
+            }}
+          />
+        </span>
+        {detail && (
+          <span
+            style={{
+              fontSize: 10,
+              color: VERDICT_COLOR[detail.verdict] ?? "var(--c-t3)",
+              width: 62,
+              textAlign: "right",
+            }}
+          >
+            {detail.verdict}
+          </span>
+        )}
+        <span
+          className="tabular"
+          style={{ width: 46, textAlign: "right", fontSize: 11, color: "var(--c-t2)" }}
+        >
+          {value.toFixed(0)}/{max}
+        </span>
+      </button>
+
+      {open && detail && (
+        <div
+          style={{
+            margin: "4px 0 10px 22px",
+            padding: "9px 11px",
+            borderLeft: `2px solid ${color}`,
+            background: "var(--c-page)",
+            borderRadius: "0 5px 5px 0",
+          }}
+        >
+          <p style={{ fontSize: 11.5, lineHeight: 1.6, color: "var(--c-t1)", margin: 0 }}>
+            {detail.reasoning}
+          </p>
+          {detail.matched.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {detail.matched.slice(0, 8).map((m) => (
+                <Chip key={m} mono>
+                  {m}
+                </Chip>
+              ))}
+            </div>
+          )}
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <span style={{ fontSize: 10, color: "var(--c-t3)" }}>
+              Weight {detail.weight_pct}% of the total
+            </span>
+            {detail.source_url && <SourceLink href={detail.source_url}>read from</SourceLink>}
+          </div>
+          {detail.to_improve && (
+            <p style={{ fontSize: 10.5, color: "var(--c-t3)", margin: "6px 0 0" }}>
+              To raise it: {detail.to_improve}
+            </p>
+          )}
+        </div>
+      )}
+    </li>
   );
 }
 

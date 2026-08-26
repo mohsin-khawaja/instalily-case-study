@@ -16,10 +16,11 @@ import { ErrorsTab } from "@/components/ErrorsTab";
 import { EventsTab } from "@/components/EventsTab";
 import { LeadDrawer } from "@/components/LeadDrawer";
 import { LeadTable } from "@/components/LeadTable";
+import { OutreachTab } from "@/components/OutreachTab";
 import { MetricTiles, RunEconomicsBar } from "@/components/MetricTiles";
 import { PipelineStrip } from "@/components/PipelineStrip";
 
-type Tab = "leads" | "events" | "errors";
+type Tab = "leads" | "outreach" | "events" | "errors";
 
 const TIER_FILTERS: { value: Tier; label: string; color: string }[] = [
   { value: "A", label: "A · Priority", color: "var(--c-good)" },
@@ -352,6 +353,12 @@ export default function Dashboard() {
         {(
           [
             { id: "leads", label: "Leads", count: leads.length, warn: false },
+            {
+              id: "outreach",
+              label: "Outreach",
+              count: leads.reduce((n, l) => n + l.outreach.length, 0),
+              warn: false,
+            },
             { id: "events", label: "Events", count: events.length, warn: false },
             { id: "errors", label: "Errors", count: errors.length, warn: true },
           ] as const
@@ -535,6 +542,15 @@ export default function Dashboard() {
           </>
         )}
 
+        {tab === "outreach" && (
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <OutreachTab
+              leads={leads}
+              loading={loading}
+              onOutreachChange={applyOutreach}
+            />
+          </div>
+        )}
         {tab === "events" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
             <EventsTab events={events} loading={loading} />
