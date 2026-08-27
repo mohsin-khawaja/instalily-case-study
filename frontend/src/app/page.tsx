@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError, api } from "@/lib/api";
 import type {
+  AgentOut,
   EventOut,
   Lead,
   OutreachOut,
@@ -18,9 +19,10 @@ import { LeadDrawer } from "@/components/LeadDrawer";
 import { LeadTable } from "@/components/LeadTable";
 import { OutreachTab } from "@/components/OutreachTab";
 import { MetricTiles, RunEconomicsBar } from "@/components/MetricTiles";
+import { AgentsTab } from "@/components/AgentsTab";
 import { PipelineStrip } from "@/components/PipelineStrip";
 
-type Tab = "leads" | "outreach" | "events" | "errors";
+type Tab = "leads" | "outreach" | "events" | "agents" | "errors";
 
 const TIER_FILTERS: { value: Tier; label: string; color: string }[] = [
   { value: "A", label: "A · Priority", color: "var(--c-good)" },
@@ -36,6 +38,7 @@ export default function Dashboard() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [events, setEvents] = useState<EventOut[]>([]);
+  const [agents, setAgents] = useState<AgentOut[]>([]);
   const [errors, setErrors] = useState<StageErrorOut[]>([]);
   const [run, setRun] = useState<RunOut | null>(null);
 
@@ -66,7 +69,7 @@ export default function Dashboard() {
 
   const load = useCallback(async (isStale: () => boolean = () => false) => {
     try {
-      const [s, l, e, err, runs] = await Promise.all([
+      const [s, l, e, err, runs, ag] = await Promise.all([
         api.summary(),
         api.leads({
           tier: tiers.length ? tiers : undefined,
@@ -77,6 +80,7 @@ export default function Dashboard() {
         api.events(),
         api.errors(),
         api.runs(),
+        api.agents(),
       ]);
       // A slower earlier request must not overwrite a newer one's results.
       if (isStale()) return;
@@ -85,6 +89,7 @@ export default function Dashboard() {
       setEvents(e);
       setErrors(err);
       setRun(runs[0] ?? null);
+      setAgents(ag);
       setApiError(null);
     } catch (e) {
       if (isStale()) return;
@@ -360,6 +365,7 @@ export default function Dashboard() {
               warn: false,
             },
             { id: "events", label: "Events", count: events.length, warn: false },
+            { id: "agents", label: "Agents", count: agents.length, warn: false },
             { id: "errors", label: "Errors", count: errors.length, warn: true },
           ] as const
         ).map((t) => (
@@ -554,6 +560,11 @@ export default function Dashboard() {
         {tab === "events" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
             <EventsTab events={events} loading={loading} />
+          </div>
+        )}
+        {tab === "agents" && (
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <AgentsTab agents={agents} loading={loading} />
           </div>
         )}
         {tab === "errors" && (

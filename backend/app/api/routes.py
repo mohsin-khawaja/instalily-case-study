@@ -17,6 +17,7 @@ from datetime import datetime
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
 from sqlmodel import Session, func, select
 
+from ..agents import AGENTS
 from ..config import get_settings
 from ..db import get_session
 from ..models.domain import Company, Contact, Event, OutreachDraft, Qualification, utcnow
@@ -60,6 +61,39 @@ def health() -> dict:
         "search_provider": settings.search_provider,
         "contact_providers": settings.contact_provider_chain,
     }
+
+
+@router.get("/agents")
+def list_agents(session: Session = Depends(get_session)) -> list[dict]:
+    """The agent roster, with what each one actually did on the last run.
+
+    Static definition plus live metrics, so the page shows a working system
+    rather than an architecture diagram.
+    """
+    last_run = session.exec(
+        select(PipelineRun).order_by(PipelineRun.started_at.desc())
+    ).first()
+    counts = (last_run.counts or {}) if last_run else {}
+    states = (last_run.stage_states or {}) if last_run else {}
+
+    error_counts: dict[str, int] = {}
+    if last_run:
+        for row in session.exec(
+            select(StageError).where(StageError.run_id == last_run.id)
+        ).all():
+            key = row.stage.value
+            error_counts[key] = error_counts.get(key, 0) + 1
+
+    out: list[dict] = []
+    for agent in AGENTS:
+        payload = agent.as_dict()
+        payload["state"] = states.get(agent.stage, "pending")
+        payload["handled_errors"] = error_counts.get(agent.stage, 0)
+        payload["results"] = {
+            key: counts.get(key, 0) for key in agent.metrics if key in counts
+        }
+        out.append(payload)
+    return out
 
 
 @router.get("/summary", response_model=SummaryOut)

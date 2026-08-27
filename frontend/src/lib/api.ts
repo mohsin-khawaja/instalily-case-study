@@ -1,4 +1,5 @@
 import type {
+  AgentOut,
   EventOut,
   Lead,
   OutreachOut,
@@ -45,6 +46,7 @@ export interface LeadFilters {
 export const api = {
   summary: () => request<Summary>("/api/summary"),
   events: () => request<EventOut[]>("/api/events"),
+  agents: () => request<AgentOut[]>("/api/agents"),
   // Defaults to the latest run, matching the summary tile. "all" for history.
   errors: (runId?: string) =>
     request<StageErrorOut[]>(

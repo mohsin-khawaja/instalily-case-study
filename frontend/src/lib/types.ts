@@ -204,3 +204,17 @@ export interface ProspectReport {
     opener: string;
   } | null;
 }
+
+export interface AgentOut {
+  stage: string;
+  name: string;
+  mission: string;
+  decides: string[];
+  delegates_to_llm?: string | null;
+  degrades_to: string;
+  guardrail: string;
+  metrics: string[];
+  state: string;
+  handled_errors: number;
+  results: Record<string, number>;
+}

@@ -239,6 +239,28 @@ data, not silence.
 
 ---
 
+## The agent roster
+
+Six specialists run in sequence. Each decides *what to do next* in code and
+delegates to the model only where judgement over messy language is genuinely
+needed — that boundary is what makes the output reproducible and arguable
+rather than merely plausible. `backend/app/agents.py` is the single definition;
+the dashboard's **Agents** tab renders it alongside what each one actually did
+on the last run.
+
+| # | Agent | Owns | Hands to the model |
+|---|---|---|---|
+| 1 | **Event Research** | Which institutions to verify; event vs. listicle; one event per host | — |
+| 2 | **Company Sourcing** | Which channels to draw on; exhibitor vs. venue partner; dedup rules | — |
+| 3 | **Enrichment** | Which pages to crawl; enrichment order; whether to trust a size figure | Reading crawled text into structured fields |
+| 4 | **Qualification** | The entire 0–100 score; confidence; which tier earns contact spend | Writing the rationale over a finished breakdown |
+| 5 | **Stakeholder** | Provider waterfall order; employer verification; function-based ranking | — |
+| 6 | **Outreach** | Which evidence is the strongest hook; whether a draft ships | Writing the email |
+
+Each carries an explicit degradation path and a guardrail — an unreachable event
+is kept and marked unverified rather than dropped; a provider answering 403
+retires itself for the run; no email is ever addressed to a placeholder contact.
+
 ## Where this sits in the GTM engineering stack
 
 The canonical GTM engineering motion is: ICP definition → account sourcing →
