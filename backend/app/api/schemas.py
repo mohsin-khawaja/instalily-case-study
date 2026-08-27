@@ -3,7 +3,7 @@ is explicit and the join work happens once, in one place."""
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -36,8 +36,11 @@ class EventOut(BaseModel):
     url: str
     event_type: str
     organizer: str | None = None
+    venue: str | None = None
     city: str | None = None
     country: str | None = None
+    start_date: date | None = None
+    end_date: date | None = None
     tier1: bool = False
     relevance_note: str | None = None
     status: str

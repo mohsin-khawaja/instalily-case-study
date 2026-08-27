@@ -3,6 +3,27 @@
 import type { EventOut } from "@/lib/types";
 import { CautionChip, Chip, Empty, Skeleton, SourceLink } from "./Atoms";
 
+/** "8–10 Apr 2026", or a single date, or nothing when undated. */
+function formatDates(start?: string | null, end?: string | null): string {
+  if (!start) return "";
+  // These are date-only values. `new Date("2026-05-19")` parses as UTC midnight
+  // and then renders in local time, which shifts the day backwards west of
+  // Greenwich — the show would have read "18 May" for a 19 May opening.
+  const opts: Intl.DateTimeFormatOptions = {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  };
+  const s = new Date(start);
+  if (!end || end === start) return s.toLocaleDateString("en-GB", opts);
+  const e = new Date(end);
+  const sameMonth = s.getUTCMonth() === e.getUTCMonth() && s.getUTCFullYear() === e.getUTCFullYear();
+  return sameMonth
+    ? `${s.getUTCDate()}–${e.toLocaleDateString("en-GB", opts)}`
+    : `${s.toLocaleDateString("en-GB", opts)} – ${e.toLocaleDateString("en-GB", opts)}`;
+}
+
 export function EventsTab({ events, loading }: { events: EventOut[]; loading: boolean }) {
   if (loading) return <Skeleton rows={5} />;
   if (!events.length) return <Empty title="No events discovered yet" />;
@@ -34,6 +55,13 @@ export function EventsTab({ events, loading }: { events: EventOut[]; loading: bo
               </Chip>
             )}
           </div>
+
+          {formatDates(event.start_date, event.end_date) && (
+            <p style={{ fontSize: 11.5, color: "var(--c-t1)", margin: "6px 0 0", fontWeight: 500 }}>
+              {formatDates(event.start_date, event.end_date)}
+              {event.venue ? ` · ${event.venue}` : ""}
+            </p>
+          )}
 
           <div className="mt-2 flex flex-wrap gap-1.5">
             <Chip>{event.event_type.replace(/_/g, " ")}</Chip>

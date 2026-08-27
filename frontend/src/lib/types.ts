@@ -21,8 +21,11 @@ export interface EventOut {
   url: string;
   event_type: string;
   organizer?: string | null;
+  venue?: string | null;
   city?: string | null;
   country?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
   tier1: boolean;
   relevance_note?: string | null;
   status: string;

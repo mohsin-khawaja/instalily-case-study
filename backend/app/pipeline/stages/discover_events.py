@@ -37,8 +37,11 @@ SEED_EVENTS: list[dict] = [
         "event_type": EventType.TRADE_SHOW,
         "tier1": True,
         "organizer": "International Sign Association",
-        "city": "Las Vegas",
+        "city": "Orlando",
         "country": "USA",
+        "venue": "Orange County Convention Center",
+        "start_date": date(2026, 4, 8),
+        "end_date": date(2026, 4, 10),
         "relevance_note": (
             "North America's flagship sign, graphics and visual communications show. "
             "Sign manufacturers, wrap shops and film converters -- Tedlar's direct "
@@ -54,8 +57,11 @@ SEED_EVENTS: list[dict] = [
         "event_type": EventType.TRADE_SHOW,
         "tier1": True,
         "organizer": "PRINTING United Alliance",
-        "city": "Orlando",
+        "city": "Las Vegas",
         "country": "USA",
+        "venue": "Las Vegas Convention Center",
+        "start_date": date(2026, 9, 23),
+        "end_date": date(2026, 9, 25),
         "relevance_note": (
             "Largest US printing trade show, with a dedicated wide-format and graphics "
             "floor. Wide-format printers are the converters that laminate Tedlar films "
@@ -71,7 +77,11 @@ SEED_EVENTS: list[dict] = [
         "event_type": EventType.TRADE_SHOW,
         "tier1": True,
         "organizer": "FESPA",
-        "country": "Europe",
+        "city": "Barcelona",
+        "country": "Spain",
+        "venue": "Fira Barcelona Gran Via",
+        "start_date": date(2026, 5, 19),
+        "end_date": date(2026, 5, 22),
         "relevance_note": (
             "Europe's principal speciality print and signage exhibition; the main "
             "European route to vehicle-wrap and outdoor-graphics converters."

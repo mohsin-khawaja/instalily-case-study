@@ -262,9 +262,20 @@ export function LeadDrawer({
             ) : (
               <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
                 {lead.events.map((event) => (
-                  <li key={event.id} className="mb-1.5 flex items-center gap-2">
+                  <li key={event.id} className="mb-1.5 flex flex-wrap items-center gap-2">
                     <SourceLink href={event.url}>{event.name}</SourceLink>
                     <Chip>{event.event_type.replace(/_/g, " ")}</Chip>
+                    {event.start_date && (
+                      <Chip tone="info">
+                        {new Date(event.start_date).toLocaleDateString("en-GB", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                          timeZone: "UTC",
+                        })}
+                      </Chip>
+                    )}
+                    {event.city && <Chip>{event.city}</Chip>}
                   </li>
                 ))}
               </ul>
@@ -320,8 +331,15 @@ export function LeadDrawer({
                     {contact.sales_nav_url && (
                       <SourceLink href={contact.sales_nav_url}>Sales Navigator search</SourceLink>
                     )}
-                    {contact.email && (
+                    {contact.email ? (
                       <span style={{ fontSize: 11, color: "var(--c-t2)" }}>{contact.email}</span>
+                    ) : (
+                      <span
+                        style={{ fontSize: 10.5, color: "var(--c-t3)", fontStyle: "italic" }}
+                        title="No verified address was found. Guessing first.last@domain would be fabrication, and a bounced first touch costs more than looking one up."
+                      >
+                        no verified email — look up before sending
+                      </span>
                     )}
                   </div>
                 </div>
