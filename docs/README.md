@@ -4,6 +4,7 @@
 |---|---|
 | `Tedlar-Lead-Agent-Writeup.pdf` | The 3-page write-up: agent workflow, data processing, implementation results. |
 | `Tedlar-Lead-Agent.pptx` | 9-slide presentation covering the process and the prototype. |
+| `Tedlar-Lead-Agent-Paper.pdf` | 3-page paper: agent workflow, data processing, implementation results. |
 | `writeup.md` | Markdown source for the PDF. |
 | `DESIGN.md` | Dashboard design notes — palette, layout, accessibility choices. |
 | `build_deck.js` | Regenerates the deck: `npm install pptxgenjs && node build_deck.js`. |
