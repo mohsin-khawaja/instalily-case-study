@@ -6,6 +6,9 @@ export const metadata: Metadata = {
   title: "Tedlar Lead Agent",
   description:
     "AI lead generation and outreach for DuPont Tedlar Graphics & Signage: event discovery, company enrichment, qualification, contacts and outreach drafts.",
+  // The public demo lists named people at real companies. Reachable by link,
+  // deliberately not indexed.
+  robots: { index: false, follow: false },
 };
 
 /* Applied before first paint so the page never flashes the wrong theme, and so

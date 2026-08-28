@@ -11,13 +11,108 @@ import type {
 
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000";
 
+/**
+ * Static demo mode. The public deployment ships the dashboard without its
+ * FastAPI backend, so reads resolve from a snapshot under /public/data and
+ * writes are refused outright. Faking a successful save would make the demo
+ * lie about what it persisted, which is the one thing this project does not do.
+ */
+const STATIC = process.env.NEXT_PUBLIC_STATIC_DATA === "1";
+
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
   }
 }
 
+const READ_ONLY =
+  "Read-only demo: this deployment has no backend. Clone the repo and run the " +
+  "API locally to edit drafts or start a run.";
+
+async function staticJson<T>(file: string): Promise<T> {
+  const response = await fetch(`/data/${file}`, { cache: "force-cache" });
+  if (!response.ok) throw new ApiError(`Missing snapshot: ${file}`, response.status);
+  return (await response.json()) as T;
+}
+
+function matchesFilters(lead: Lead, params: URLSearchParams): boolean {
+  const tiers = params.getAll("tier");
+  if (tiers.length && !tiers.includes(lead.tier)) return false;
+  if (lead.score_total < Number(params.get("min_score") ?? 0)) return false;
+
+  const eventId = params.get("event_id");
+  if (eventId && !lead.events.some((e) => e.id === eventId)) return false;
+
+  const industry = params.get("industry");
+  if (industry && !(lead.industry ?? "").toLowerCase().includes(industry.toLowerCase())) {
+    return false;
+  }
+
+  const hasContact = params.get("has_contact");
+  if (hasContact !== null && Boolean(lead.contacts.length) !== (hasContact === "true")) {
+    return false;
+  }
+
+  const needle = (params.get("q") ?? "").toLowerCase().trim();
+  if (needle) {
+    const haystack = [
+      lead.company_name,
+      lead.industry ?? "",
+      lead.description ?? "",
+      lead.sub_industries.join(" "),
+      lead.products.join(" "),
+    ]
+      .join(" ")
+      .toLowerCase();
+    if (!haystack.includes(needle)) return false;
+  }
+  return true;
+}
+
+async function staticRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  if ((init?.method ?? "GET").toUpperCase() !== "GET") {
+    throw new ApiError(READ_ONLY, 405);
+  }
+  const url = new URL(path, "http://local");
+  const route = url.pathname;
+  const params = url.searchParams;
+
+  if (route === "/api/summary") return staticJson<T>("summary.json");
+  if (route === "/api/events") return staticJson<T>("events.json");
+  if (route === "/api/agents") return staticJson<T>("agents.json");
+  if (route === "/api/errors") return staticJson<T>("errors.json");
+  if (route === "/api/runs") return staticJson<T>("runs.json");
+
+  if (route.startsWith("/api/runs/")) {
+    const id = route.slice("/api/runs/".length);
+    const runs = await staticJson<RunOut[]>("runs.json");
+    const found = runs.find((r) => r.id === id);
+    if (!found) throw new ApiError(`No such run: ${id}`, 404);
+    return found as T;
+  }
+
+  if (route === "/api/leads") {
+    const leads = await staticJson<Lead[]>("leads.json");
+    const limit = Number(params.get("limit") ?? 250);
+    return leads.filter((l) => matchesFilters(l, params)).slice(0, limit) as T;
+  }
+
+  const reportMatch = route.match(/^\/api\/leads\/([^/]+)\/report$/);
+  if (reportMatch) return staticJson<T>(`reports/${reportMatch[1]}.json`);
+
+  const leadMatch = route.match(/^\/api\/leads\/([^/]+)$/);
+  if (leadMatch) {
+    const leads = await staticJson<Lead[]>("leads.json");
+    const found = leads.find((l) => l.company_id === leadMatch[1]);
+    if (!found) throw new ApiError(`No such lead: ${leadMatch[1]}`, 404);
+    return found as T;
+  }
+
+  throw new ApiError(`${route} is not available in the static demo.`, 404);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  if (STATIC) return staticRequest<T>(path, init);
   let response: Response;
   try {
     response = await fetch(`${BASE}${path}`, {
@@ -68,6 +163,7 @@ export const api = {
 
   /** Absolute URL so the browser downloads straight from the API origin. */
   leadsCsvUrl: (filters: LeadFilters = {}) => {
+    if (STATIC) return "/data/leads.csv";
     const params = new URLSearchParams();
     filters.tier?.forEach((t) => params.append("tier", t));
     if (filters.min_score) params.set("min_score", String(filters.min_score));
@@ -77,6 +173,7 @@ export const api = {
 
   /** Zip of .eml drafts — drag into Gmail; MailSuite tracks them once sent. */
   outreachZipUrl: (filters: { tier?: string[]; approved_only?: boolean } = {}) => {
+    if (STATIC) return "/data/outreach.zip";
     const params = new URLSearchParams();
     filters.tier?.forEach((t) => params.append("tier", t));
     if (filters.approved_only) params.set("approved_only", "true");
