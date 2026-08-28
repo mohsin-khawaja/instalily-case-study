@@ -11,6 +11,12 @@ with the LLM confined to fuzzy judgment**: scoring, deduplication, retries,
 persistence and filtering are plain Python, and the model only reads messy pages
 and writes prose over facts the pipeline already verified.
 
+**[Live dashboard →](https://instalily-case-study-seven.vercel.app/)** — the real
+result set (97 companies, 16 qualified leads, 32 contacts, 29 drafts) served from a
+static snapshot. Browsing, filtering, score breakdowns, evidence links and prospect
+reports all work. Starting a run and editing drafts need the local API, since the
+deployment has no backend; those buttons say so rather than pretending to save.
+
 ---
 
 ## Quick start
