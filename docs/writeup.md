@@ -123,7 +123,7 @@ template built from the same evidence, labelled as such in the UI.
 
 ## 4. Implementation results
 
-Pipeline runs end to end in both modes. A full live run with Anthropic, Serper and Apollo configured sources **95 companies**, enriches **89** from their own sites, qualifies **16** as tier A/B, and produces **27 named decision-makers** — each with a Sales Navigator link — and **24 drafted emails**, in about ten minutes for **$0.85**, or **$0.053 per qualified lead**. Leads export as CSV with provenance columns; drafts export as .eml or open directly in Gmail, where MailSuite tracks opens and forwards.
+Pipeline runs end to end in both modes. A full live run with Anthropic, Serper and Apollo configured sources **97 companies**, enriches **90** from their own sites, qualifies **16** as tier A/B, and produces **32 named decision-makers** — each with a Sales Navigator link — and **29 drafted emails**, in about ten minutes for **$0.63**, or **$0.039 per qualified lead**. Leads export as CSV with provenance columns; drafts export as .eml or open directly in Gmail, where MailSuite tracks opens and forwards.
 
 The sharpest test was the brief's own example. Avery Dennison first scored 48 of 100 — tier C — which sent us looking for why, and found three real defects: a pain-point vocabulary too literal to match a company that says "warranty" but never "year warranty"; an enrichment order that spent the scarce firmographics quota alphabetically rather than on flagship accounts; and a name guard that rejected a page titled "Avery Dennison Revenue" for not saying "Graphics Solutions". Fixing those moved it to tier B with full size credit, two named Directors and a written email — and lifted qualified leads across the corpus from 6 to 16.
 
