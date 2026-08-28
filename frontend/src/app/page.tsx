@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { ApiError, api } from "@/lib/api";
 import type {
   AgentOut,
@@ -24,6 +31,19 @@ import { PipelineStrip } from "@/components/PipelineStrip";
 
 type Tab = "leads" | "outreach" | "events" | "agents" | "errors";
 
+/* Theme store: <html class="dark"> is the single source of truth, set before
+   paint by the bootstrap script and flipped by the toggle. */
+function subscribeToTheme(onChange: () => void) {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["class"],
+  });
+  return () => observer.disconnect();
+}
+const isDark = () => document.documentElement.classList.contains("dark");
+const isDarkOnServer = () => false;
+
 const TIER_FILTERS: { value: Tier; label: string; color: string }[] = [
   { value: "A", label: "A · Priority", color: "var(--c-good)" },
   { value: "B", label: "B · Qualified", color: "var(--c-score-1)" },
@@ -32,9 +52,11 @@ const TIER_FILTERS: { value: Tier; label: string; color: string }[] = [
 ];
 
 export default function Dashboard() {
-  const [dark, setDark] = useState(
-    () => typeof document !== "undefined" && document.documentElement.classList.contains("dark"),
-  );
+  // Read the theme off <html>, where the bootstrap script already put it.
+  // useSyncExternalStore keeps server and client renders consistent: hydration
+  // uses the server snapshot, then React re-renders with the real DOM value —
+  // which a useState initializer cannot do without a hydration mismatch.
+  const dark = useSyncExternalStore(subscribeToTheme, isDark, isDarkOnServer);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [events, setEvents] = useState<EventOut[]>([]);
@@ -56,15 +78,15 @@ export default function Dashboard() {
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  /* The bootstrap script in layout.tsx has already resolved the theme onto
-     <html> before paint, so we read it rather than deciding it again here. */
+  /* The DOM is the source of truth; the store above observes it. */
   function toggleTheme() {
-    setDark((d) => {
-      const next = !d;
+    const next = !document.documentElement.classList.contains("dark");
+    document.documentElement.classList.toggle("dark", next);
+    try {
       window.localStorage.setItem("tedlar-theme", next ? "dark" : "light");
-      document.documentElement.classList.toggle("dark", next);
-      return next;
-    });
+    } catch {
+      /* private windows can refuse storage; the toggle still works this session */
+    }
   }
 
   const load = useCallback(async (isStale: () => boolean = () => false) => {
@@ -166,7 +188,6 @@ export default function Dashboard() {
 
   return (
     <div
-      className={dark ? "dark" : ""}
       style={{
         height: "100vh",
         display: "flex",
