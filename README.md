@@ -381,10 +381,10 @@ add complexity and cache nothing.
 ```
 backend/app/
   models/       domain + enums + run bookkeeping
-  pipeline/     runner, run context, seven stages
+  pipeline/     runner, run context, six stages
   scoring/      icp.py (the ICP as data), score.py (the scorer)
   services/     http + cache + extract + dedupe + search + llm
-  integrations/ contacts/ (public web, mock, Clay, Sales Navigator)
+  integrations/ contacts/ (Apollo, public web, mock, Clay, Sales Navigator)
   api/          FastAPI routes and response schemas
 backend/data/raw/   committed HTTP snapshot
 backend/tests/      77 tests, no network

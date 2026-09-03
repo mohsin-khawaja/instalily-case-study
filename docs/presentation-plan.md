@@ -54,12 +54,16 @@ Numbers to say out loud:
 > that qualifies everything is just a list."
 
 ### 1:30 – 3:00 · One lead, end to end
-**On screen:** click **Drytac** (top lead, 87/100, tier A).
+**On screen:** click **Avery Dennison Graphics Solutions** (76/100, tier A).
+
+Use this one, not the top-scoring lead: it is the example company named in the
+brief, so qualifying it is the strongest possible proof the scorer works.
 
 This is the heart of the video. Four moves:
 
-1. **Score breakdown.** "Eighty-seven out of a hundred across five weighted
-   components. The number is computed in Python — the model never produces it."
+1. **Score breakdown.** "Seventy-six out of a hundred across five weighted
+   components. The number is computed in Python — the model never produces it.
+   This is the company the brief itself names, and it clears tier A on evidence."
 2. **Expand one component.** Click *Application fit*. "It tells you which terms
    matched, where they were read, and what would raise it. That's the difference
    between a score you can act on and a number you have to trust."
@@ -84,7 +88,7 @@ Then click **Open in Gmail** so the compose window appears pre-filled.
 
 The line that lands:
 
-> "**Four of the six touch no model at all.** The Qualification Agent writes the
+> "**Three of the six touch no model at all.** The Qualification Agent writes the
 > rationale — but over a score that's already final. That boundary is why the
 > output is reproducible instead of just plausible."
 
@@ -129,7 +133,7 @@ Ending on a limitation and a roadmap reads as judgement, not as an apology.
 ## Questions you will get, and the answers
 
 **"Is this just an LLM wrapper?"**
-Four of six agents make no model call. Scoring, dedup, retries, provider
+Three of six agents make no model call. Scoring, dedup, retries, provider
 selection and filtering are all deterministic. The model reads pages and writes
 prose over facts already verified.
 
@@ -141,11 +145,19 @@ a fetch timestamp. The whole HTTP snapshot is committed to the repo.
 Because 69 failed on evidence. Ask them whether they'd rather have 97 leads that
 mean nothing.
 
-**"Why isn't Avery Dennison tier A?"** *(the brief's own example)*
-It's tier B. Its event participation couldn't be verified from public sources on
-this run, so that component scored zero rather than being assumed — the same
-principle that keeps revenue honest. Worth saying it scored 48 before three bugs
-were found and fixed by testing against exactly this account.
+**"How does the brief's own example score?"** *(Avery Dennison)*
+76 of 100, tier A, with two named Directors and a written email. Worth saying it
+scored **48** on the first run — testing against this one account is what exposed
+three real defects: a pain vocabulary too literal to match a company that says
+"warranty" but never "year warranty", an enrichment order that spent the scarce
+firmographics quota alphabetically instead of on flagship accounts, and a name
+guard that rejected the very pages answering the question. Fixing those took it
+to 76 and lifted qualified leads across the corpus from 6 to 16.
+
+**"Isn't `avery.com` the same company?"**
+No — and the pipeline knows. `avery.com` is Avery Products, office labels; it
+scores 5 and is disqualified. `averydennison.com` scores 76. Two similar names,
+separated on registrable domain and then judged on evidence.
 
 **"What breaks at 10,000 companies?"**
 Nothing structural. Per-record isolation already exists, so moving to a task

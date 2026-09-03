@@ -29,7 +29,7 @@ td { padding: 3.5pt 5pt; border-bottom: 1px solid #e3e9ec; vertical-align: top; 
 <hr />
 <h2>1. Agent workflow</h2>
 <p>The brief invites a swarm of chatty agents. I built the opposite: a <strong>deterministic
-pipeline of seven stages</strong>, with the LLM confined to the two jobs it is genuinely
+pipeline of six stages</strong>, with the LLM confined to the two jobs it is genuinely
 better at than code — reading a messy web page, and writing prose over facts that
 are already established.</p>
 <p><code>discover_events → extract_companies → dedupe → enrich_companies
@@ -121,7 +121,7 @@ template built from the same evidence, labelled as such in the UI.</p>
 <hr />
 <h2>4. Implementation results</h2>
 <p>Pipeline runs end to end in both modes. A full live run with Anthropic, Serper and Apollo configured sources <strong>97 companies</strong>, enriches <strong>90</strong> from their own sites, qualifies <strong>16</strong> as tier A/B, and produces <strong>32 named decision-makers</strong> — each with a Sales Navigator link — and <strong>29 drafted emails</strong>, in about ten minutes for <strong>$0.63</strong>, or <strong>$0.039 per qualified lead</strong>. Leads export as CSV with provenance columns; drafts export as .eml or open directly in Gmail, where MailSuite tracks opens and forwards.</p>
-<p>The sharpest test was the brief's own example. Avery Dennison first scored 48 of 100 — tier C — which sent us looking for why, and found three real defects: a pain-point vocabulary too literal to match a company that says "warranty" but never "year warranty"; an enrichment order that spent the scarce firmographics quota alphabetically rather than on flagship accounts; and a name guard that rejected a page titled "Avery Dennison Revenue" for not saying "Graphics Solutions". Fixing those moved it to tier B with full size credit, two named Directors and a written email — and lifted qualified leads across the corpus from 6 to 16.</p>
+<p>The sharpest test was the brief's own example. Avery Dennison first scored 48 of 100 — tier C — which sent us looking for why, and found three real defects: a pain-point vocabulary too literal to match a company that says "warranty" but never "year warranty"; an enrichment order that spent the scarce firmographics quota alphabetically rather than on flagship accounts; and a name guard that rejected a page titled "Avery Dennison Revenue" for not saying "Graphics Solutions". Fixing those moved it to tier A with full size credit, two named Directors and a written email — and lifted qualified leads across the corpus from 6 to 16.</p>
 <p><strong>165 tests, no network</strong>, covering scoring bands and tier boundaries, deduplication, LLM-output repair, provider outages, rate-limit circuit breaking, employer- and entity-match precision, lookalike ranking, outreach validation, export provenance, and the resilience guarantee.</p>
 <p>The dashboard shows summary metrics, live stage progress, filters by event / tier /
 score / text, a lead table, and a detail panel with the score breakdown, rationale,

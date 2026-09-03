@@ -111,7 +111,7 @@ function card(s, x, y, w, h, fill = MIST) {
 
 /* 3 — Pipeline ----------------------------------------------------------- */
 {
-  const s = lightSlide("Seven stages, each isolating its own failures", "Architecture");
+  const s = lightSlide("Six stages, each isolating its own failures", "Architecture");
   const stages = [
     ["Discover events", "Seeded anchors verified live, plus search expansion"],
     ["Source companies", "Directories ∪ ICP search ∪ verified roster"],
@@ -225,23 +225,24 @@ function card(s, x, y, w, h, fill = MIST) {
 
 /* 7 — Contacts ----------------------------------------------------------- */
 {
-  const s = lightSlide("Contact enrichment is one interface, four providers", "Integration path");
+  const s = lightSlide("Contact enrichment is one interface, five providers", "Integration path");
   const provs = [
+    ["ApolloProvider", "Working (org endpoint)", "Firmographics resolve against the live API. People search is gated on the free tier, so no email is ever guessed \u2014 the run degrades to search snippets.", AMBER],
     ["PublicWebContactProvider", "Working", "Follows the site's own nav to leadership pages, plus site-restricted LinkedIn search.", TEAL],
     ["MockContactProvider", "Working", "Deterministic fixtures. Always 0% confidence and a mock badge, so placeholder data can never read as sourced.", TEAL],
-    ["ClayProvider", "Credential-gated", "The real table-webhook → poll/callback flow, written in full. Set CLAY_API_KEY and CLAY_WEBHOOK_URL.", AMBER],
-    ["SalesNavigatorProvider", "Credential-gated", "The real SNAP salesApiLeadSearch call shape. Scraping would breach LinkedIn's terms — so without a partner token it contributes a pre-filtered deep link a licensed rep can click.", AMBER],
+    ["ClayProvider", "Credential-gated", "The real table-webhook \u2192 poll/callback flow, written in full. Set CLAY_API_KEY and CLAY_WEBHOOK_URL.", AMBER],
+    ["SalesNavigatorProvider", "Credential-gated", "The real SNAP salesApiLeadSearch call shape. Scraping would breach LinkedIn's terms \u2014 so without a partner token it contributes a pre-filtered deep link a licensed rep can click.", AMBER],
   ];
   provs.forEach(([name, state, body, color], i) => {
-    const y = 1.78 + i * 1.16;
-    card(s, M, y, W - M * 2, 1.02, i > 1 ? "FDF3E2" : MIST);
-    s.addShape(pres.ShapeType.ellipse, { x: M + 0.32, y: y + 0.42, w: 0.18, h: 0.18, fill: { color } });
-    s.addText(name, { x: M + 0.68, y: y + 0.14, w: 3.7, h: 0.34, fontFace: B, fontSize: 14, bold: true, color: DEEP, margin: 0 });
-    s.addText(state, { x: M + 0.68, y: y + 0.5, w: 3.7, h: 0.3, fontFace: B, fontSize: 11, italic: true, color: MUTED, margin: 0 });
-    s.addText(body, { x: M + 4.6, y: y + 0.16, w: W - M * 2 - 5.0, h: 0.75, fontFace: B, fontSize: 12, color: INK, margin: 0 });
+    const y = 1.72 + i * 1.02;
+    card(s, M, y, W - M * 2, 0.90, i >= 3 ? "FDF3E2" : MIST);
+    s.addShape(pres.ShapeType.ellipse, { x: M + 0.32, y: y + 0.36, w: 0.18, h: 0.18, fill: { color } });
+    s.addText(name, { x: M + 0.68, y: y + 0.10, w: 3.7, h: 0.32, fontFace: B, fontSize: 14, bold: true, color: DEEP, margin: 0 });
+    s.addText(state, { x: M + 0.68, y: y + 0.44, w: 3.7, h: 0.30, fontFace: B, fontSize: 11, italic: true, color: MUTED, margin: 0 });
+    s.addText(body, { x: M + 4.6, y: y + 0.11, w: W - M * 2 - 5.0, h: 0.70, fontFace: B, fontSize: 12, color: INK, margin: 0 });
   });
   s.addText("Enabling Clay in production is CONTACT_PROVIDERS=clay,public_web plus two secrets. No caller changes.", {
-    x: M, y: 6.55, w: W - M * 2, h: 0.4, fontFace: B, fontSize: 13, bold: true, color: DEEP, margin: 0,
+    x: M, y: 6.88, w: W - M * 2, h: 0.4, fontFace: B, fontSize: 13, bold: true, color: DEEP, margin: 0,
   });
   s.addNotes("is_configured() gates each provider, so an unconfigured one is skipped rather than crashed on.");
 }

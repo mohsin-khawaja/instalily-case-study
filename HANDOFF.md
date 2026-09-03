@@ -34,7 +34,7 @@ reshuffles which companies are found.
 
 ## What exists
 
-Seven-stage pipeline presented as **six named agents** (`backend/app/agents.py`,
+Six-stage pipeline, one named agent per stage (`backend/app/agents.py`,
 Agents tab in the dashboard). Per-component score explanations with matched
 terms and source URLs. Lookalike modelling against reference accounts. On-demand
 prospect research reports. Gmail compose deep-links plus `.eml` export
@@ -48,7 +48,7 @@ Navigator providers written and credential-gated.
    looked at the slides. **Open it before submitting.** This is the only real
    risk left.
 2. **Run-to-run variance.** Serper's ranking drifts, so the lead set changes
-   between live runs — Avery Dennison has scored 48, 61 and 73 across runs.
+   between live runs — Avery Dennison has scored 48, 61, 73 and 76 across runs.
    Demo cached.
 3. **No contact has a verified email** (0/32). Apollo gates people search on the
    free tier. The UI says so explicitly rather than guessing an address.
@@ -77,6 +77,6 @@ Several defects were found by testing against the brief's own example account
 rather than by inspection — a pain vocabulary too literal to match a company
 that says "warranty" but never "year warranty"; an enrichment order that spent
 the firmographics quota alphabetically; a name guard that rejected the very
-pages answering the question. Avery Dennison went 48 → 73 as a result, and
+pages answering the question. Avery Dennison went 48 → 76 as a result, and
 corpus-wide qualified leads went 6 → 16. If something looks wrong in the data,
 test it against a known-good account first.
